@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: paiokebiao
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app/server.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: JOBS_DIR
+        value: /tmp/jobs
