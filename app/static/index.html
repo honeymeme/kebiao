@@ -56,6 +56,9 @@
     padding:13px 16px;border-radius:10px;font-weight:600;font-size:15px
   }
   .dl a:hover{background:var(--accent-2)}
+  .ghost-link{display:inline-block;font-size:13px;color:var(--accent-2);text-decoration:none;
+              border:1px dashed #c7d2fe;border-radius:9px;padding:8px 12px;background:#f8faff}
+  .ghost-link:hover{background:#eef2ff}
   .warns{margin-top:12px}
   .warns div{font-size:13px;color:var(--warn);background:#fffbeb;border:1px solid #fde68a;
              border-radius:9px;padding:8px 12px;margin-top:6px;line-height:1.5}
@@ -87,10 +90,11 @@
   <section class="card">
     <h2><span class="step">1</span>上传课表压缩包</h2>
     <div id="drop">
-      <strong>把 ZIP 拖到这里，或点一下选择（可一次选多个）</strong>
-      <small>压缩包里按部门分文件夹（如「青协课表/」），部长放在「部长/」子文件夹<br>文件名格式：部门 姓名 班级 联系方式</small>
+      <strong>把文件拖到这里，或点一下选择（可一次选多个）</strong>
+      <small>① 课表 PDF 压缩包：按部门分文件夹（如「青协课表/」），部长放在「部长/」子文件夹<br>
+      ② 已经做好的空课表：直接选「XX部门空课表.xlsx」，可多个一起选，只排值班表</small>
     </div>
-    <input id="file" type="file" accept=".zip" multiple class="hide">
+    <input id="file" type="file" accept=".zip,.xlsx,.xlsm" multiple class="hide">
     <div id="status" class="muted" style="margin-top:10px"></div>
     <div id="report"></div>
   </section>
@@ -149,9 +153,9 @@ drop.addEventListener('drop', ev => {
 let jobId = null;
 
 async function uploadMany(files){
-  const zips = files.filter(f => f.name.toLowerCase().endsWith('.zip'));
+  const zips = files.filter(f => /.(zip|xlsx|xlsm)$/i.test(f.name));
   if (!zips.length) {
-    $('#status').textContent = '请上传 .zip 压缩包';
+    $('#status').textContent = '请上传 .zip 压缩包，或 .xlsx 空课表';
     return;
   }
   $('#report').innerHTML = ''; $('#cfg').classList.add('hide'); $('#result').classList.add('hide');
@@ -163,7 +167,10 @@ async function uploadMany(files){
       $('#status').innerHTML = '<span class="spinner" style="border-color:#2563eb;border-right-color:transparent"></span>'
         + '正在上传（' + (i + 1) + '/' + zips.length + '）：' + zips[i].name;
       const url = jobId ? ('/api/add?job=' + jobId + '&defer=1') : '/api/upload?defer=1';
-      const res = await fetch(url, {method:'POST', body: zips[i]});
+      const res = await fetch(url, {
+        method:'POST', body: zips[i],
+        headers: {'X-Filename': encodeURIComponent(zips[i].name)}
+      });
       data = await res.json();
       if (!res.ok) throw new Error((zips[i].name + '：') + (data.error || '上传失败'));
       jobId = data.job;
@@ -207,7 +214,9 @@ function renderReport(d, names){
     html += '</ul><div class="muted">修好文件后重新上传即可。</div></div>';
   } else {
     html += '<div class="problems okbar" style="margin-top:12px">格式检查通过，共 '
-         + d.total + ' 人、' + d.depts.length + ' 个部门。</div>';
+         + d.total + ' 人、' + d.depts.length + ' 个部门。'
+         + (d.mode === 'sheet' ? '<br>数据来源：已做好的空课表 —— 这次只会生成值班表。' : '')
+         + '</div>';
     $('#cfg').classList.remove('hide');
   }
   $('#report').innerHTML = html;
@@ -254,7 +263,8 @@ window.addEventListener('load', () => {
 
 function renderResult(d){
   let html = '<div class="muted" style="margin-bottom:12px">周次：第 ' + d.weeks.replace('-', ' – ') + ' 周 · '
-           + d.depts.length + ' 个部门 · 值班表 ' + d.duty_weeks + ' 张</div>';
+           + d.depts.length + ' 个部门 · 值班表 ' + d.duty_weeks + ' 张'
+           + (d.mode === 'sheet' ? ' · 数据来源：已做好的空课表' : '') + '</div>';
   if (d.stats) {
     const s = d.stats;
     html += '<div class="muted" style="margin-bottom:12px">每人排班次数：平均 ' + s.avg
@@ -262,8 +272,13 @@ function renderResult(d){
           + (s.zero && s.zero.length ? '<br><span style="color:#b45309">没排到的人：' + s.zero.join('、') + '</span>' : '')
           + '</div>';
   }
-  html += '<div class="dl"><a href="' + d.empty + '">下载 空课表.zip</a>'
+  html += '<div class="dl">'
+        + (d.empty ? '<a href="' + d.empty + '">下载 空课表.zip</a>' : '')
         + '<a href="' + d.duty + '">下载 值班表.zip</a></div>';
+  if (d.detail) {
+    html += '<div style="margin-top:12px"><a class="ghost-link" href="' + d.detail + '">'
+          + '下载 解析明细.xlsx（核对用：每人每个时段读到的有课周次）</a></div>';
+  }
   if (d.warnings && d.warnings.length){
     html += '<div class="warns"><b class="muted">需要注意：</b>';
     for (const w of d.warnings) html += '<div>' + w + '</div>';
