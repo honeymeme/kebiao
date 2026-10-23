@@ -11,11 +11,9 @@
     --ok:#059669; --warn:#b45309; --bad:#dc2626;
   }
   *{box-sizing:border-box}
-  body{
-    margin:0; background:var(--bg); color:var(--ink);
-    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
-    -webkit-font-smoothing:antialiased; padding:0 0 60px;
-  }
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+       -webkit-font-smoothing:antialiased;padding:0 0 60px}
   .wrap{max-width:820px;margin:0 auto;padding:20px 16px}
   header h1{font-size:22px;margin:6px 0 4px}
   header p{color:var(--muted);margin:0 0 18px;font-size:14px;line-height:1.6}
@@ -23,84 +21,79 @@
   .card h2{font-size:15px;margin:0 0 12px;display:flex;align-items:center;gap:8px}
   .step{display:inline-flex;width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;
         font-size:12px;align-items:center;justify-content:center;font-weight:600}
-  #drop{
-    border:2px dashed #cbd5e1;border-radius:12px;padding:26px 16px;text-align:center;
-    color:var(--muted);cursor:pointer;transition:.15s;background:#fafbfc
-  }
+  #drop{border:2px dashed #cbd5e1;border-radius:12px;padding:22px 16px;text-align:center;
+        color:var(--muted);cursor:pointer;transition:.15s;background:#fafbfc}
   #drop.over{border-color:var(--accent);background:#eff6ff;color:var(--accent)}
   #drop strong{color:var(--ink);display:block;margin-bottom:6px;font-size:15px}
   #drop small{font-size:12.5px;line-height:1.6}
-  button{
-    font:inherit;border:0;border-radius:10px;padding:11px 18px;cursor:pointer;
-    background:var(--accent);color:#fff;font-weight:600;font-size:15px
-  }
+  button{font:inherit;border:0;border-radius:10px;padding:11px 18px;cursor:pointer;
+         background:var(--accent);color:#fff;font-weight:600;font-size:15px}
   button:hover{background:var(--accent-2)}
   button:disabled{background:#c7cdd6;cursor:not-allowed}
   button.ghost{background:#eef2ff;color:var(--accent-2)}
   button.ghost:hover{background:#e0e7ff}
+  button.mini{padding:6px 10px;font-size:12.5px;border-radius:8px}
   .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
-  .depts{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-top:4px}
-  .dept{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:#fcfcfd}
-  .dept .n{font-weight:600;font-size:14px}
-  .dept .c{color:var(--muted);font-size:12.5px;margin-top:3px;line-height:1.5}
-  .problems{margin:12px 0 0;padding:12px 14px;background:#fef2f2;border:1px solid #fecaca;border-radius:10px}
-  .problems li{color:var(--bad);font-size:13px;line-height:1.6;margin:2px 0}
-  .okbar{background:#ecfdf5;border-color:#a7f3d0;color:var(--ok)}
+  .files{margin-top:14px;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .files .hd{display:flex;justify-content:space-between;align-items:center;
+             padding:9px 12px;background:#f9fafb;font-size:13px;color:var(--muted)}
+  .files ul{list-style:none;margin:0;padding:0;max-height:280px;overflow:auto}
+  .files li{display:flex;align-items:center;gap:10px;padding:9px 12px;border-top:1px solid #f1f2f4;font-size:13.5px}
+  .files li .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .files li .sz{color:var(--muted);font-size:12px;flex:0 0 auto}
+  .files li .del{color:var(--bad);cursor:pointer;font-size:12.5px;flex:0 0 auto}
   .muted{color:var(--muted);font-size:13px;line-height:1.6}
-  select{
-    font:inherit;padding:9px 10px;border-radius:9px;border:1px solid var(--line);background:#fff;color:var(--ink)
-  }
+  select{font:inherit;padding:9px 10px;border-radius:9px;border:1px solid var(--line);background:#fff;color:var(--ink)}
   .dl{display:flex;gap:12px;flex-wrap:wrap;margin-top:6px}
-  .dl a{
-    flex:1 1 200px;text-align:center;text-decoration:none;background:var(--accent);color:#fff;
-    padding:13px 16px;border-radius:10px;font-weight:600;font-size:15px
-  }
+  .dl a{flex:1 1 200px;text-align:center;text-decoration:none;background:var(--accent);color:#fff;
+        padding:13px 16px;border-radius:10px;font-weight:600;font-size:15px}
   .dl a:hover{background:var(--accent-2)}
   .ghost-link{display:inline-block;font-size:13px;color:var(--accent-2);text-decoration:none;
               border:1px dashed #c7d2fe;border-radius:9px;padding:8px 12px;background:#f8faff}
   .ghost-link:hover{background:#eef2ff}
+  .problems{margin:12px 0 0;padding:12px 14px;background:#fef2f2;border:1px solid #fecaca;border-radius:10px}
+  .problems li{color:var(--bad);font-size:13px;line-height:1.6;margin:2px 0}
+  .okbar{background:#ecfdf5;border-color:#a7f3d0;color:var(--ok)}
   .warns{margin-top:12px}
   .warns div{font-size:13px;color:var(--warn);background:#fffbeb;border:1px solid #fde68a;
              border-radius:9px;padding:8px 12px;margin-top:6px;line-height:1.5}
+  .hide{display:none !important}
+  .spinner{width:16px;height:16px;border:2px solid #fff;border-right-color:transparent;border-radius:50%;
+           display:inline-block;vertical-align:-3px;margin-right:6px;animation:sp .8s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
   #wakeTip{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:99;
            max-width:min(92vw,480px);background:#1f2937;color:#fff;border-radius:12px;
            padding:12px 14px;font-size:13.5px;line-height:1.6;box-shadow:0 8px 24px rgba(0,0,0,.18);
            display:none;align-items:flex-start;gap:10px}
   #wakeTip.show{display:flex}
   #wakeTip button{background:#374151;color:#fff;padding:6px 10px;font-size:12.5px;border-radius:8px;flex:0 0 auto}
-  #wakeTip button:hover{background:#4b5563}
-  .hide{display:none !important}
-  .spinner{width:16px;height:16px;border:2px solid #fff;border-right-color:transparent;border-radius:50%;
-           display:inline-block;vertical-align:-3px;margin-right:6px;animation:sp .8s linear infinite}
-  @keyframes sp{to{transform:rotate(360deg)}}
-  @media(max-width:520px){
-    .wrap{padding:14px 12px}
-    .card{padding:14px}
-    header h1{font-size:19px}
-  }
+  @media(max-width:520px){.wrap{padding:14px 12px}.card{padding:14px}header h1{font-size:19px}}
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
     <h1>排空课表工具</h1>
-    <p>上传各部门课表压缩包 → 自动检查格式 → 选择周次 → 生成九个部门的空课表和每周系办值班表。</p>
+    <p>课表上传后会保存在这台设备的浏览器里，下次打开还在。改好的课表重新上传同名文件即替换。</p>
   </header>
 
   <section class="card">
-    <h2><span class="step">1</span>上传课表压缩包</h2>
+    <h2><span class="step">1</span>资料库（保存在本机）</h2>
     <div id="drop">
-      <strong>把文件拖到这里，或点一下选择（可一次选多个）</strong>
-      <small>① 课表 PDF 压缩包：按部门分文件夹（如「青协课表/」），部长放在「部长/」子文件夹<br>
-      ② 已经做好的空课表：直接选「XX部门空课表.xlsx」，可多个一起选，只排值班表</small>
+      <strong>把文件拖到这里，或点一下选择</strong>
+      <small>① 课表 PDF 压缩包（按部门分文件夹，部长放「部长/」子文件夹）<br>
+      ② 已经做好的「XX部门空课表.xlsx」，可多个一起选，只排值班表<br>
+      ③ 已经排好的「第X周系办值班表.xlsx」——这些周自动跳过，已排次数计入后续排班</small>
     </div>
     <input id="file" type="file" accept=".zip,.xlsx,.xlsm" multiple class="hide">
-    <div id="status" class="muted" style="margin-top:10px"></div>
-    <div id="report"></div>
+    <div id="lib"></div>
+    <div class="row" style="margin-top:14px">
+      <button id="clear" class="ghost mini hide">清空资料库</button>
+    </div>
   </section>
 
   <section class="card hide" id="cfg">
-    <h2><span class="step">2</span>选择周次</h2>
+    <h2><span class="step">2</span>选择周次并生成</h2>
     <div class="row">
       <label class="muted">从第 <select id="w1"></select> 周</label>
       <label class="muted">到第 <select id="w2"></select> 周</label>
@@ -122,150 +115,203 @@
 const $ = s => document.querySelector(s);
 const drop = $('#drop'), fileInput = $('#file');
 
-function fillWeeks(){
-  const opts = [];
-  for (let i = 1; i <= 30; i++) opts.push('<option value="' + i + '">' + i + '</option>');
-  $('#w1').innerHTML = opts.join('');
-  $('#w2').innerHTML = opts.join('');
-  $('#w1').value = 1; $('#w2').value = 18;
+/* ---------- 资料库（IndexedDB） ---------- */
+const DB_NAME = 'paiokebiao', STORE = 'files';
+function openDB(){
+  return new Promise((res, rej) => {
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = () => { req.result.createObjectStore(STORE, {keyPath:'name'}); };
+    req.onsuccess = () => res(req.result);
+    req.onerror = () => rej(req.error);
+  });
 }
-fillWeeks();
-function sumWeeks(){
-  const a = +$('#w1').value, b = +$('#w2').value;
-  if (a > b) { $('#wsum').textContent = '起始周不能大于结束周'; return; }
-  $('#wsum').textContent = '共 ' + (b - a + 1) + ' 周';
+async function dbAll(){
+  const db = await openDB();
+  return new Promise((res, rej) => {
+    const tx = db.transaction(STORE, 'readonly').objectStore(STORE).getAll();
+    tx.onsuccess = () => res(tx.result || []);
+    tx.onerror = () => rej(tx.error);
+  });
 }
-$('#w1').onchange = sumWeeks; $('#w2').onchange = sumWeeks; sumWeeks();
+async function dbPut(rec){
+  const db = await openDB();
+  return new Promise((res, rej) => {
+    const tx = db.transaction(STORE, 'readwrite').objectStore(STORE).put(rec);
+    tx.onsuccess = () => res();
+    tx.onerror = () => rej(tx.error);
+  });
+}
+async function dbDel(name){
+  const db = await openDB();
+  return new Promise((res, rej) => {
+    const tx = db.transaction(STORE, 'readwrite').objectStore(STORE).delete(name);
+    tx.onsuccess = () => res();
+    tx.onerror = () => rej(tx.error);
+  });
+}
+async function dbClear(){
+  const db = await openDB();
+  return new Promise((res, rej) => {
+    const tx = db.transaction(STORE, 'readwrite').objectStore(STORE).clear();
+    tx.onsuccess = () => res();
+    tx.onerror = () => rej(tx.error);
+  });
+}
 
-drop.onclick = () => fileInput.click();
-fileInput.onchange = () => { uploadMany([...fileInput.files]); };
-['dragenter','dragover'].forEach(e => drop.addEventListener(e, ev => {
-  ev.preventDefault(); drop.classList.add('over');
-}));
-['dragleave','drop'].forEach(e => drop.addEventListener(e, ev => {
-  ev.preventDefault(); drop.classList.remove('over');
-}));
-drop.addEventListener('drop', ev => {
-  const fs = ev.dataTransfer.files ? [...ev.dataTransfer.files] : [];
-  if (fs.length) uploadMany(fs);
-});
+function fmtSize(n){
+  if (n < 1024) return n + ' B';
+  if (n < 1024*1024) return (n/1024).toFixed(0) + ' KB';
+  return (n/1048576).toFixed(1) + ' MB';
+}
 
-let jobId = null;
-
-async function uploadMany(files){
-  const zips = files.filter(f => /.(zip|xlsx|xlsm)$/i.test(f.name));
-  if (!zips.length) {
-    $('#status').textContent = '请上传 .zip 压缩包，或 .xlsx 空课表';
+let LIB = [];
+async function refreshLib(){
+  LIB = (await dbAll()).sort((a,b) => a.name.localeCompare(b.name, 'zh'));
+  const box = $('#lib');
+  if (!LIB.length){
+    box.innerHTML = '<div class="muted" style="margin-top:12px">资料库是空的，先拖文件进来。</div>';
+    $('#clear').classList.add('hide');
+    $('#cfg').classList.add('hide');
     return;
   }
-  $('#report').innerHTML = ''; $('#cfg').classList.add('hide'); $('#result').classList.add('hide');
-  jobId = null;
-  const names = [];
-  let data = null;
-  try{
-    for (let i = 0; i < zips.length; i++){
-      $('#status').innerHTML = '<span class="spinner" style="border-color:#2563eb;border-right-color:transparent"></span>'
-        + '正在上传（' + (i + 1) + '/' + zips.length + '）：' + zips[i].name;
-      const url = jobId ? ('/api/add?job=' + jobId + '&defer=1') : '/api/upload?defer=1';
-      const res = await fetch(url, {
-        method:'POST', body: zips[i],
-        headers: {'X-Filename': encodeURIComponent(zips[i].name)}
-      });
-      data = await res.json();
-      if (!res.ok) throw new Error((zips[i].name + '：') + (data.error || '上传失败'));
-      jobId = data.job;
-      names.push(zips[i].name);
-    }
-    const t0 = Date.now();
-    const tick = setInterval(() => {
-      const s = Math.round((Date.now() - t0) / 1000);
-      $('#status').innerHTML = '<span class="spinner" style="border-color:#2563eb;border-right-color:transparent"></span>'
-        + '正在解析课表、检查格式（' + names.length + ' 个压缩包，已用 ' + s + ' 秒）…';
-    }, 1000);
-    $('#status').innerHTML = '<span class="spinner" style="border-color:#2563eb;border-right-color:transparent"></span>'
-      + '正在解析课表、检查格式（' + names.length + ' 个压缩包）…';
-    let report;
-    try {
-      const cr = await fetch('/api/check?job=' + jobId, {method:'POST'});
-      report = await cr.json();
-      if (!cr.ok) throw new Error(report.error || '检查失败');
-    } finally {
-      clearInterval(tick);
-    }
-    renderReport(report, names);
-  }catch(err){
-    $('#status').textContent = '出错了：' + err.message;
+  const total = LIB.reduce((s,f) => s + (f.size||0), 0);
+  let html = '<div class="files"><div class="hd"><span>已保存 ' + LIB.length + ' 个文件 · '
+           + fmtSize(total) + '</span><span>重新上传同名文件会替换旧的</span></div><ul>';
+  for (const f of LIB){
+    html += '<li><span class="nm">' + f.name + '</span><span class="sz">' + fmtSize(f.size||0)
+          + '</span><span class="del" data-name="' + encodeURIComponent(f.name) + '">删除</span></li>';
   }
-}
-
-function renderReport(d, names){
-  jobId = d.job;
-  $('#status').innerHTML = '已上传 ' + names.length + ' 个压缩包：<b>' + names.join('</b>、<b>') + '</b>';
-  let html = '<div class="depts">';
-  for (const dep of d.depts){
-    html += '<div class="dept"><div class="n">' + dep.dept + '</div><div class="c">'
-         + dep.count + ' 人 · 部长 ' + dep.ministers.length + ' 人'
-         + (dep.ministers.length ? '<br>' + dep.ministers.join('、') : '') + '</div></div>';
-  }
-  html += '</div>';
-  if (d.problems && d.problems.length){
-    html += '<div class="problems"><b>需要先处理这些问题：</b><ul>';
-    for (const p of d.problems) html += '<li>' + p + '</li>';
-    html += '</ul><div class="muted">修好文件后重新上传即可。</div></div>';
-  } else {
-    html += '<div class="problems okbar" style="margin-top:12px">格式检查通过，共 '
-         + d.total + ' 人、' + d.depts.length + ' 个部门。'
-         + (d.mode === 'sheet' ? '<br>数据来源：已做好的空课表 —— 这次只会生成值班表。' : '')
-         + '</div>';
-    $('#cfg').classList.remove('hide');
-  }
-  $('#report').innerHTML = html;
+  html += '</ul></div>';
+  box.innerHTML = html;
+  $('#clear').classList.remove('hide');
+  $('#cfg').classList.remove('hide');
+  box.querySelectorAll('.del').forEach(el => {
+    el.onclick = async () => {
+      await dbDel(decodeURIComponent(el.dataset.name));
+      refreshLib();
+    };
+  });
   sumWeeks();
 }
 
-$('#go').onclick = async () => {
-  if (!jobId) return;
+async function addFiles(files){
+  const ok = files.filter(f => /\.(zip|xlsx|xlsm)$/i.test(f.name));
+  if (!ok.length){ $('#genStatus').textContent = '只支持 .zip / .xlsx 文件'; return; }
+  for (const f of ok){
+    await dbPut({name: f.name, blob: f, size: f.size, ts: Date.now()});
+  }
+  fileInput.value = '';
+  await refreshLib();
+  $('#genStatus').textContent = '已保存 ' + ok.length + ' 个文件到资料库。';
+}
+
+drop.onclick = () => fileInput.click();
+fileInput.onchange = () => { if (fileInput.files.length) addFiles([...fileInput.files]); };
+['dragenter','dragover'].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.add('over'); }));
+['dragleave','drop'].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', ev => {
+  const fs = ev.dataTransfer.files ? [...ev.dataTransfer.files] : [];
+  if (fs.length) addFiles(fs);
+});
+$('#clear').onclick = async () => {
+  if (!confirm('确定清空资料库里保存的文件吗？')) return;
+  await dbClear();
+  refreshLib();
+  $('#result').classList.add('hide');
+};
+
+/* ---------- 周次 ---------- */
+function fillWeeks(){
+  const opts = [];
+  for (let i = 1; i <= 30; i++) opts.push('<option value="' + i + '">' + i + '</option>');
+  $('#w1').innerHTML = opts.join(''); $('#w2').innerHTML = opts.join('');
+  $('#w1').value = 1; $('#w2').value = 18;
+}
+function sumWeeks(){
   const a = +$('#w1').value, b = +$('#w2').value;
-  if (a > b) { $('#genStatus').textContent = '起始周不能大于结束周'; return; }
+  $('#wsum').textContent = a > b ? '起始周不能大于结束周' : ('共 ' + (b - a + 1) + ' 周');
+}
+fillWeeks(); $('#w1').onchange = sumWeeks; $('#w2').onchange = sumWeeks;
+refreshLib();
+
+/* ---------- 生成 ---------- */
+function spinner(txt){ return '<span class="spinner" style="border-color:#2563eb;border-right-color:transparent"></span>' + txt; }
+
+$('#go').onclick = async () => {
+  if (!LIB.length) return;
+  const a = +$('#w1').value, b = +$('#w2').value;
+  if (a > b){ $('#genStatus').textContent = '起始周不能大于结束周'; return; }
+  const hasZip = LIB.some(f => /\.zip$/i.test(f.name));
+  const hasXlsx = LIB.some(f => /\.xlsx$/i.test(f.name));
+  if (hasZip && hasXlsx){
+    if (!confirm('资料库里同时有 ZIP 和 xlsx，只能二选一：\n· 用 PDF 课表 → 请先删掉 xlsx\n· 用做好的空课表 → 请先删掉 ZIP\n\n继续生成只会使用 xlsx（做好的空课表）。')) {
+      return;
+    }
+  }
   $('#go').disabled = true;
-  $('#genStatus').innerHTML = '<span class="spinner" style="border-color:#2563eb;border-right-color:transparent"></span>正在生成，请稍候…';
-  try{
-    const res = await fetch('/api/generate', {
+  $('#result').classList.add('hide');
+  const t0 = Date.now();
+  const tick = setInterval(() => {
+    $('#genStatus').innerHTML = spinner($('#genStatus').dataset.phase + '（已用 ' + Math.round((Date.now()-t0)/1000) + ' 秒）');
+  }, 1000);
+  const setPhase = (p) => { $('#genStatus').dataset.phase = p; $('#genStatus').innerHTML = spinner(p); };
+  try {
+    let jobId = null;
+    for (let i = 0; i < LIB.length; i++){
+      setPhase('上传文件 ' + (i+1) + '/' + LIB.length + '：' + LIB[i].name);
+      const url = jobId ? ('/api/add?job=' + jobId + '&defer=1') : '/api/upload?defer=1';
+      const res = await fetch(url, {
+        method:'POST', body: LIB[i].blob,
+        headers: {'X-Filename': encodeURIComponent(LIB[i].name)}
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(LIB[i].name + '：' + (data.error || '上传失败'));
+      jobId = data.job;
+    }
+    setPhase('解析课表、检查格式');
+    const cr = await fetch('/api/check?job=' + jobId, {method:'POST'});
+    const report = await cr.json();
+    if (!cr.ok) throw new Error(report.error || '检查失败');
+    if (report.problems && report.problems.length){
+      renderProblems(report);
+      return;
+    }
+    setPhase('排班并生成表格');
+    const gr = await fetch('/api/generate', {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({job: jobId, start: a, end: b})
     });
-    const d = await res.json();
-    if (!res.ok) throw new Error(d.error || '生成失败');
-    renderResult(d);
+    const g = await gr.json();
+    if (!gr.ok) throw new Error(g.error || '生成失败');
+    renderResult(g);
     $('#genStatus').textContent = '生成完成。';
-  }catch(err){
+  } catch (err){
     $('#genStatus').textContent = '出错了：' + err.message;
-  }finally{
+  } finally {
+    clearInterval(tick);
     $('#go').disabled = false;
   }
 };
 
-// 冷启动提醒：如果这次打开等很久，多半是服务器刚从休眠中唤醒
-window.addEventListener('load', () => {
-  const t = performance.timing
-    ? performance.timing.loadEventEnd - performance.timing.navigationStart : 0;
-  if (t > 6000) {
-    const el = document.createElement('div');
-    el.id = 'wakeTip';
-    el.innerHTML = '<div>服务器刚从休眠中被唤醒（免费版第一次打开要 30–60 秒），现在已就绪，'
-      + '之后再打开会很快。</div><button>知道了</button>';
-    document.body.appendChild(el);
-    requestAnimationFrame(() => el.classList.add('show'));
-    el.querySelector('button').onclick = () => el.remove();
-    setTimeout(() => el.remove(), 15000);
-  }
-});
+function renderProblems(d){
+  let html = '<div class="problems" style="margin-top:16px"><b>需要先处理这些问题：</b><ul>';
+  for (const p of d.problems) html += '<li>' + p + '</li>';
+  html += '</ul><div class="muted">改好后把文件重新拖进来（同名会替换），再点生成。</div></div>';
+  $('#resultBody').innerHTML = html;
+  $('#result').classList.remove('hide');
+  $('#result').scrollIntoView({behavior:'smooth', block:'nearest'});
+}
 
 function renderResult(d){
   let html = '<div class="muted" style="margin-bottom:12px">周次：第 ' + d.weeks.replace('-', ' – ') + ' 周 · '
            + d.depts.length + ' 个部门 · 值班表 ' + d.duty_weeks + ' 张'
            + (d.mode === 'sheet' ? ' · 数据来源：已做好的空课表' : '') + '</div>';
-  if (d.stats) {
+  if (d.skipped_weeks && d.skipped_weeks.length){
+    html += '<div class="muted" style="margin-bottom:12px">已跳过已有值班表的周：'
+          + d.skipped_weeks.map(w => '第' + w + '周').join('、')
+          + '（已排的人次已计入后续排班）</div>';
+  }
+  if (d.stats){
     const s = d.stats;
     html += '<div class="muted" style="margin-bottom:12px">每人排班次数：平均 ' + s.avg
           + ' 次，最少 ' + s.min + ' 次，最多 ' + s.max + ' 次'
@@ -275,7 +321,7 @@ function renderResult(d){
   html += '<div class="dl">'
         + (d.empty ? '<a href="' + d.empty + '">下载 空课表.zip</a>' : '')
         + '<a href="' + d.duty + '">下载 值班表.zip</a></div>';
-  if (d.detail) {
+  if (d.detail){
     html += '<div style="margin-top:12px"><a class="ghost-link" href="' + d.detail + '">'
           + '下载 解析明细.xlsx（核对用：每人每个时段读到的有课周次）</a></div>';
   }
@@ -288,6 +334,20 @@ function renderResult(d){
   $('#result').classList.remove('hide');
   $('#result').scrollIntoView({behavior:'smooth', block:'nearest'});
 }
+
+// 冷启动提醒
+window.addEventListener('load', () => {
+  const t = performance.timing ? performance.timing.loadEventEnd - performance.timing.navigationStart : 0;
+  if (t > 6000){
+    const el = document.createElement('div');
+    el.id = 'wakeTip';
+    el.innerHTML = '<div>服务器刚从休眠中被唤醒（免费版第一次打开要 30–60 秒），现在已就绪。</div><button>知道了</button>';
+    document.body.appendChild(el);
+    requestAnimationFrame(() => el.classList.add('show'));
+    el.querySelector('button').onclick = () => el.remove();
+    setTimeout(() => el.remove(), 15000);
+  }
+});
 </script>
 </body>
 </html>
