@@ -16,6 +16,8 @@ os.makedirs(JOBS, exist_ok=True)
 STATIC = os.path.join(HERE, "static")
 
 LOCK = threading.Lock()
+DATA_CACHE = {}   # job_id -> 已解析的成员数据，避免生成时再解析一遍
+
 
 
 def job_dir(jid):
@@ -133,12 +135,14 @@ class Handler(BaseHTTPRequestHandler):
             with open(meta_path, "w", encoding="utf-8") as f:
                 json.dump(meta, f, ensure_ascii=False)
 
+        DATA_CACHE.pop(jid, None)   # 有新文件进来，缓存作废
         if defer:
             # 先把文件收下，等全部传完再统一解析一次（避免每个包都重跑一遍检查）
             self._json({"job": jid, "files": meta["zips"], "deferred": True})
             return
 
-        report, _data = pipeline.check(src, meta["order"])
+        report, data = pipeline.check(src, meta["order"])
+        DATA_CACHE[jid] = data
         report["job"] = jid
         report["files"] = meta["zips"]
         self._json(report)
@@ -151,7 +155,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"error": "任务不存在，请重新上传"}, 400)
             return
         meta = json.load(open(meta_path, encoding="utf-8"))
-        report, _data = pipeline.check(src, meta.get("order"))
+        report, data = pipeline.check(src, meta.get("order"))
+        DATA_CACHE[jid] = data
         report["job"] = jid
         report["files"] = meta.get("zips", [])
         self._json(report)
@@ -170,7 +175,7 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"error": "任务不存在，请重新上传"}, 400)
             return
 
-        data = pipeline.load_all(src)
+        data = DATA_CACHE.get(jid) or pipeline.load_all(src)
         out_empty = os.path.join(d, "空课表")
         out_duty = os.path.join(d, "值班表")
         for p in (out_empty, out_duty):
