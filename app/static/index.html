@@ -169,11 +169,22 @@ async function uploadMany(files){
       jobId = data.job;
       names.push(zips[i].name);
     }
+    const t0 = Date.now();
+    const tick = setInterval(() => {
+      const s = Math.round((Date.now() - t0) / 1000);
+      $('#status').innerHTML = '<span class="spinner" style="border-color:#2563eb;border-right-color:transparent"></span>'
+        + '正在解析课表、检查格式（' + names.length + ' 个压缩包，已用 ' + s + ' 秒）…';
+    }, 1000);
     $('#status').innerHTML = '<span class="spinner" style="border-color:#2563eb;border-right-color:transparent"></span>'
       + '正在解析课表、检查格式（' + names.length + ' 个压缩包）…';
-    const cr = await fetch('/api/check?job=' + jobId, {method:'POST'});
-    const report = await cr.json();
-    if (!cr.ok) throw new Error(report.error || '检查失败');
+    let report;
+    try {
+      const cr = await fetch('/api/check?job=' + jobId, {method:'POST'});
+      report = await cr.json();
+      if (!cr.ok) throw new Error(report.error || '检查失败');
+    } finally {
+      clearInterval(tick);
+    }
     renderReport(report, names);
   }catch(err){
     $('#status').textContent = '出错了：' + err.message;
