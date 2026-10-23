@@ -70,9 +70,18 @@ def load_all(src_dir, order=None):
     return result
 
 
+def load_any(src_dir, order=None):
+    """自动判断是 PDF 通道还是"做好的空课表"通道"""
+    has_sheet = any(f.lower().endswith((".xlsx", ".xlsm")) for f in os.listdir(src_dir))
+    if has_sheet:
+        import sheets
+        return "sheet", sheets.load_sheets(src_dir, order)
+    return "pdf", load_all(src_dir, order)
+
+
 def check(src_dir, order=None):
-    data = load_all(src_dir, order)
-    report = {"depts": [], "problems": [], "total": 0}
+    mode, data = load_any(src_dir, order)
+    report = {"depts": [], "problems": [], "total": 0, "mode": mode}
     seen = {}
     for dept, members in data.items():
         info = {"dept": dept, "count": len(members),
@@ -81,13 +90,19 @@ def check(src_dir, order=None):
         for m in members:
             fn = os.path.basename(m.pdf_path)
             if not m.name or not m.klass or not m.phone:
-                report["problems"].append("%s：文件名「%s」缺少姓名/班级/电话（应为「部门 姓名 班级 电话」）" % (dept, fn))
+                if mode == "pdf":
+                    report["problems"].append("%s：文件名「%s」缺少姓名/班级/电话（应为「部门 姓名 班级 电话」）" % (dept, fn))
+                else:
+                    report["problems"].append("%s：%s 在底部信息表里缺少班级或联系方式" % (dept, m.name or fn))
                 info["ok"] = False
             if m.error:
                 report["problems"].append("%s：%s 解析失败（%s）" % (dept, m.name or fn, m.error))
                 info["ok"] = False
-            elif not m.busy:
+            elif mode == "pdf" and not m.busy:
                 report["problems"].append("%s：%s 的 PDF 没有读到任何课程，请检查文件" % (dept, m.name or fn))
+                info["ok"] = False
+            elif mode == "sheet" and not m.busy:
+                report["problems"].append("%s：%s 在空课表里一次空闲都没有出现，无法排班" % (dept, m.name or fn))
                 info["ok"] = False
             key = (m.name, m.phone)
             if key in seen:
@@ -315,5 +330,43 @@ def build_duty(template, week, week_plan, notes, out_path):
     if notes:
         ws["I3"] = "注：" + "；".join(notes) + "，其余位置正常。"
         ws["I3"].alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
+    wb.save(out_path)
+    return out_path
+
+
+def build_detail(data, w1, w2, out_path, counts=None):
+    """生成"解析明细.xlsx"：每人每格的有课/空闲周次，方便抽查。"""
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "汇总"
+    head = ["部门", "姓名", "班级", "联系方式", "部长", "总排班次数"]
+    ws.append(head)
+
+    ws2 = wb.create_sheet("时段明细")
+    ws2.append(["部门", "姓名", "星期", "时段", "有课周次（1-30）", "范围内空闲周次"])
+
+    for dept, members in data.items():
+        for m in members:
+            ws.append([dept, m.name, m.klass, m.phone, "是" if m.is_minister else "",
+                       (counts or {}).get(m.name, "")])
+            for day in range(1, 6):
+                for blk in range(4):
+                    busy = sorted(m.busy.get((day, blk)) or [])
+                    free = free_weeks(m.busy.get((day, blk)), w1, w2)
+                    ws2.append([dept, m.name, WEEKDAY_NAMES[day - 1], BLOCK_TIMES[blk],
+                                fmt_weeks(busy) or "（无课）", fmt_weeks(free) or "（全满）"])
+
+    for sheet in (ws, ws2):
+        widths = {"A": 10, "B": 10, "C": 14, "D": 16, "E": 8, "F": 26}
+        for col, w in widths.items():
+            sheet.column_dimensions[col].width = w
+        for cell in sheet[1]:
+            cell.font = openpyxl.styles.Font(name="微软雅黑", bold=True, sz=11)
+        for row in sheet.iter_rows(min_row=2):
+            for cell in row:
+                cell.font = openpyxl.styles.Font(name="微软雅黑", sz=10)
+                cell.alignment = openpyxl.styles.Alignment(horizontal="left", vertical="center")
+    ws.freeze_panes = "A2"
+    ws2.freeze_panes = "A2"
     wb.save(out_path)
     return out_path

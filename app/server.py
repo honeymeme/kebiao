@@ -67,6 +67,12 @@ class Handler(BaseHTTPRequestHandler):
             if kind in names:
                 self._file(os.path.join(job_dir(jid), names[kind]), "application/zip", names[kind])
                 return
+            if kind == "detail":
+                self._file(
+                    os.path.join(job_dir(jid), "解析明细.xlsx"),
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "解析明细.xlsx")
+                return
             self._json({"error": "参数错误"}, 400)
             return
         self._json({"error": "not found"}, 404)
@@ -101,6 +107,10 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"error": "压缩包太大了（上限 120MB）"}, 413)
             return
         data = self.rfile.read(n)
+        raw_name = self.headers.get("X-Filename") or ""
+        from urllib.parse import unquote
+        fname = unquote(raw_name).strip().replace("/", "_").replace("\\", "_")
+        is_sheet = fname.lower().endswith((".xlsx", ".xlsm"))
         new_job = jid is None or not jid
         if new_job:
             jid = uuid.uuid4().hex[:12]
@@ -117,21 +127,31 @@ class Handler(BaseHTTPRequestHandler):
                     meta = json.load(open(meta_path, encoding="utf-8"))
                 except Exception:
                     pass
-            zpath = os.path.join(d, "upload_%02d.zip" % (len(meta["zips"]) + 1))
-            with open(zpath, "wb") as f:
-                f.write(data)
-            try:
-                with zipfile.ZipFile(zpath) as z:
-                    z.extractall(src)
-                    names = [os.path.basename(x) for x in z.namelist() if x.lower().endswith(".pdf")]
-            except zipfile.BadZipFile:
-                os.remove(zpath)
-                if new_job:
-                    shutil.rmtree(d, ignore_errors=True)
-                self._json({"error": "这不是一个有效的 ZIP 压缩包"}, 400)
-                return
-            meta["zips"].append(os.path.basename(zpath))
-            meta["order"].extend(names)
+            if is_sheet:
+                # 第二种通道：直接传做好的空课表 xlsx
+                target = os.path.join(src, fname or ("空课表_%02d.xlsx" % (len(meta["zips"]) + 1)))
+                with open(target, "wb") as f:
+                    f.write(data)
+                meta["zips"].append(fname)
+                meta["order"].append(os.path.basename(target))
+                meta.setdefault("mode", "sheet")
+            else:
+                zpath = os.path.join(d, "upload_%02d.zip" % (len(meta["zips"]) + 1))
+                with open(zpath, "wb") as f:
+                    f.write(data)
+                try:
+                    with zipfile.ZipFile(zpath) as z:
+                        z.extractall(src)
+                        names = [os.path.basename(x) for x in z.namelist()
+                                 if x.lower().endswith((".pdf", ".xlsx", ".xlsm"))]
+                except zipfile.BadZipFile:
+                    os.remove(zpath)
+                    if new_job:
+                        shutil.rmtree(d, ignore_errors=True)
+                    self._json({"error": "这不是有效的 ZIP 压缩包（如果要传空课表，请直接选 .xlsx 文件）"}, 400)
+                    return
+                meta["zips"].append(os.path.basename(zpath))
+                meta["order"].extend(names)
             with open(meta_path, "w", encoding="utf-8") as f:
                 json.dump(meta, f, ensure_ascii=False)
 
@@ -175,7 +195,16 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"error": "任务不存在，请重新上传"}, 400)
             return
 
-        data = DATA_CACHE.get(jid) or pipeline.load_all(src)
+        meta = {}
+        meta_path = os.path.join(d, "meta.json")
+        if os.path.exists(meta_path):
+            try:
+                meta = json.load(open(meta_path, encoding="utf-8"))
+            except Exception:
+                meta = {}
+        mode, data = pipeline.load_any(src, meta.get("order"))
+        if jid in DATA_CACHE:
+            data = DATA_CACHE[jid]
         out_empty = os.path.join(d, "空课表")
         out_duty = os.path.join(d, "值班表")
         for p in (out_empty, out_duty):
@@ -183,11 +212,12 @@ class Handler(BaseHTTPRequestHandler):
             os.makedirs(p, exist_ok=True)
 
         warnings = []
-        for dept, members in data.items():
-            if not members:
-                continue
-            pipeline.build_empty(pipeline.EMPTY_TPL, dept, members, w1, w2,
-                                 os.path.join(out_empty, "%s部门空课表.xlsx" % dept))
+        if mode == "pdf":
+            for dept, members in data.items():
+                if not members:
+                    continue
+                pipeline.build_empty(pipeline.EMPTY_TPL, dept, members, w1, w2,
+                                     os.path.join(out_empty, "%s部门空课表.xlsx" % dept))
 
         plan, notes, duty_stats = pipeline.plan_duty(data, w1, w2)
         duty_files = []
@@ -200,8 +230,18 @@ class Handler(BaseHTTPRequestHandler):
             for msg in notes.get(w, []):
                 warnings.append("第%s周：%s" % (pipeline.cn_num(w), msg))
 
-        for folder, zname, names in ((out_empty, "空课表.zip", sorted(os.listdir(out_empty))),
-                                     (out_duty, "值班表.zip", duty_files)):
+        counts = {}
+        for wk in plan.values():
+            for lst in wk.values():
+                for p in lst:
+                    counts[p.name] = counts.get(p.name, 0) + 1
+        detail_path = os.path.join(d, "解析明细.xlsx")
+        pipeline.build_detail(data, w1, w2, detail_path, counts)
+
+        folders = [(out_duty, "值班表.zip", duty_files)]
+        if mode == "pdf":
+            folders.insert(0, (out_empty, "空课表.zip", sorted(os.listdir(out_empty))))
+        for folder, zname, names in folders:
             zp = os.path.join(d, zname)
             with zipfile.ZipFile(zp, "w", zipfile.ZIP_DEFLATED) as zf:
                 for f in names:
@@ -209,10 +249,12 @@ class Handler(BaseHTTPRequestHandler):
 
         self._json({
             "job": jid,
+            "mode": mode,
             "weeks": "%d-%d" % (w1, w2),
             "depts": list(data.keys()),
-            "empty": "/api/download?job=%s&kind=empty" % jid,
+            "empty": ("/api/download?job=%s&kind=empty" % jid) if mode == "pdf" else None,
             "duty": "/api/download?job=%s&kind=duty" % jid,
+            "detail": "/api/download?job=%s&kind=detail" % jid,
             "warnings": warnings[:50],
             "duty_weeks": len(plan),
             "stats": duty_stats,
