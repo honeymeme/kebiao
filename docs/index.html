@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>排空课表工具</title>
+<style>
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{background:#f5f6f8;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+       color:#1b1f24;overflow:hidden}
+  #frame{position:fixed;inset:0;width:100%;height:100%;border:0;background:#f5f6f8}
+  #boot{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+        gap:18px;background:#f5f6f8;z-index:10;transition:opacity .4s;padding:24px;text-align:center}
+  #boot.hide{opacity:0;pointer-events:none}
+  .ring{width:44px;height:44px;border:3px solid #dbeafe;border-top-color:#2563eb;border-radius:50%;
+        animation:spin .9s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  h1{font-size:19px;margin:0;font-weight:600}
+  p{margin:0;color:#6b7280;font-size:14px;line-height:1.7;max-width:340px}
+  #more{font-size:13px;color:#2563eb;text-decoration:none;margin-top:4px}
+  #more:hover{text-decoration:underline}
+  .slow{color:#b45309}
+</style>
+</head>
+<body>
+<iframe id="frame" src="https://paiokebiao.onrender.com/" title="排空课表工具"></iframe>
+
+<div id="boot">
+  <div class="ring"></div>
+  <h1>正在唤醒服务器…</h1>
+  <p id="hint">免费版服务器在没人用时会休眠，第一次打开大约需要 <b>30–60 秒</b>，请稍等一下。</p>
+  <a id="more" href="https://paiokebiao.onrender.com/" target="_blank" rel="noopener">等了很久？直接打开 →</a>
+</div>
+
+<script>
+  const boot = document.getElementById('boot');
+  const frame = document.getElementById('frame');
+  const hint = document.getElementById('hint');
+  let done = false;
+
+  function ready(){
+    if (done) return;
+    done = true;
+    boot.classList.add('hide');
+    setTimeout(() => boot.remove(), 500);
+  }
+
+  frame.addEventListener('load', ready);
+
+  setTimeout(function(){
+    if (done) return;
+    hint.innerHTML = '<span class="slow">服务器还在启动，再等一会儿…</span>';
+  }, 35000);
+
+  setTimeout(function(){
+    if (done) return;
+    hint.innerHTML = '<span class="slow">等得有点久了。可以先点下面的链接直接打开试试。</span>';
+  }, 80000);
+</script>
+</body>
+</html>
