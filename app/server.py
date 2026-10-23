@@ -224,7 +224,7 @@ class Handler(BaseHTTPRequestHandler):
         skipped = sorted(w for w in hist_weeks if w1 <= w <= w2)
         if skipped:
             warnings.append("已按上传的值班表跳过：" + "、".join("第%d周" % w for w in skipped)
-                            + "（这些周的成绩/次数已计入后续排班）")
+                            + "（这些周已排的人次已计入后续排班）")
         plan, notes, duty_stats = pipeline.plan_duty(
             data, w1, w2, seed_counts=hist_counts, skip_weeks=hist_weeks)
         duty_files = []
@@ -266,7 +266,7 @@ class Handler(BaseHTTPRequestHandler):
             "detail": "/api/download?job=%s&kind=detail" % jid,
             "skipped_weeks": skipped,
             "warnings": warnings[:50],
-            "duty_weeks": len(plan),
+            "duty_weeks": len(duty_files),
             "stats": duty_stats,
         })
 
