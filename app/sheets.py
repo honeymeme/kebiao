@@ -7,7 +7,17 @@ from openpyxl.cell.rich_text import CellRichText, TextBlock
 from core import Member
 
 BLOCK_ROWS = [4, 8, 12, 16]
-RED = "FFFF0000"
+BLACK = ("00000000", "FF000000", "000000")
+
+
+def _is_special(color):
+    """非黑色（红、蓝、绿……）都当作部长标记。"""
+    if color is None:
+        return False
+    rgb = getattr(color, "rgb", None)
+    if not isinstance(rgb, str):
+        return False
+    return rgb.upper() not in BLACK
 
 
 def _weeks_from_text(s):
@@ -32,8 +42,8 @@ def _cell_lines(cell):
         for block in v:
             if isinstance(block, TextBlock):
                 txt = block.text
-                color = block.font.color.rgb if (block.font and block.font.color) else None
-                red = (color == RED)
+                color = block.font.color if (block.font and block.font.color) else None
+                red = _is_special(color)
                 for ch in txt:
                     if ch == "\n":
                         if cur.strip():
@@ -94,8 +104,7 @@ def parse_empty_sheet(path):
         klass = ws.cell(row=r, column=3).value or ""
         phone = ws.cell(row=r, column=4).value or ""
         c = ws.cell(row=r, column=2)
-        is_red = bool(c.font and c.font.color and isinstance(c.font.color.rgb, str)
-                      and c.font.color.rgb == RED)
+        is_red = _is_special(c.font.color if c.font else None)
         info[name] = (str(klass).strip(), str(phone).strip())
         if is_red:
             minister.add(name)
@@ -119,7 +128,8 @@ def parse_empty_sheet(path):
 
 def load_sheets(src_dir, order=None):
     data = {}
-    files = [f for f in os.listdir(src_dir) if f.lower().endswith((".xlsx", ".xlsm"))]
+    files = [f for f in os.listdir(src_dir)
+             if f.lower().endswith((".xlsx", ".xlsm")) and "值班表" not in f]
     seq = {b: i for i, b in enumerate(order or [])}
     files.sort(key=lambda f: (seq.get(f, 9999), f))
     for f in files:

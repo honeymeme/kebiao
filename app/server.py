@@ -219,9 +219,18 @@ class Handler(BaseHTTPRequestHandler):
                 pipeline.build_empty(pipeline.EMPTY_TPL, dept, members, w1, w2,
                                      os.path.join(out_empty, "%s部门空课表.xlsx" % dept))
 
-        plan, notes, duty_stats = pipeline.plan_duty(data, w1, w2)
+        import history as history_mod
+        hist_counts, hist_weeks, _hist_detail = history_mod.load_history(src)
+        skipped = sorted(w for w in hist_weeks if w1 <= w <= w2)
+        if skipped:
+            warnings.append("已按上传的值班表跳过：" + "、".join("第%d周" % w for w in skipped)
+                            + "（这些周的成绩/次数已计入后续排班）")
+        plan, notes, duty_stats = pipeline.plan_duty(
+            data, w1, w2, seed_counts=hist_counts, skip_weeks=hist_weeks)
         duty_files = []
         for w in range(w1, w2 + 1):
+            if w in hist_weeks:
+                continue
             week_plan = plan[w]
             fn = "第%s周系办值班表.xlsx" % pipeline.cn_num(w)
             pipeline.build_duty(pipeline.DUTY_TPL, w, week_plan, notes.get(w, []),
@@ -255,6 +264,7 @@ class Handler(BaseHTTPRequestHandler):
             "empty": ("/api/download?job=%s&kind=empty" % jid) if mode == "pdf" else None,
             "duty": "/api/download?job=%s&kind=duty" % jid,
             "detail": "/api/download?job=%s&kind=detail" % jid,
+            "skipped_weeks": skipped,
             "warnings": warnings[:50],
             "duty_weeks": len(plan),
             "stats": duty_stats,

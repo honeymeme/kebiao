@@ -72,7 +72,8 @@ def load_all(src_dir, order=None):
 
 def load_any(src_dir, order=None):
     """自动判断是 PDF 通道还是"做好的空课表"通道"""
-    has_sheet = any(f.lower().endswith((".xlsx", ".xlsm")) for f in os.listdir(src_dir))
+    has_sheet = any(f.lower().endswith((".xlsx", ".xlsm")) and "值班表" not in f
+                    for f in os.listdir(src_dir))
     if has_sheet:
         import sheets
         return "sheet", sheets.load_sheets(src_dir, order)
@@ -191,17 +192,20 @@ def build_empty(template, dept, members, w1, w2, out_path):
     return grid
 
 
-def plan_duty(all_members, w1, w2, per_cell=2):
-    """按周排班。返回 (plan, notes)"""
+def plan_duty(all_members, w1, w2, per_cell=2, seed_counts=None, skip_weeks=None):
+    """按周排班。seed_counts = 已排过的次数（来自上传的值班表），skip_weeks = 已排好的周。"""
     people = []
     for dept, ms in all_members.items():
         for m in ms:
             people.append(m)
 
-    count = {id(p): 0 for p in people}
+    seed_counts = seed_counts or {}
+    skip_weeks = set(skip_weeks or ())
+    count = {id(p): int(seed_counts.get(p.name, 0)) for p in people}
     last_week = {id(p): -99 for p in people}
     n_normal = max(1, len([p for p in people if not p.is_minister]))
-    total_slots = (w2 - w1 + 1) * 20 * per_cell
+    todo_weeks = [w for w in range(w1, w2 + 1) if w not in skip_weeks]
+    total_slots = len(todo_weeks) * 20 * per_cell
     cap = max(2, -(-total_slots // n_normal))   # 每人平均应排的次数（向上取整）
     plan = {}
     notes = {}
@@ -209,6 +213,9 @@ def plan_duty(all_members, w1, w2, per_cell=2):
     for w in range(w1, w2 + 1):
         week_plan = {}
         notes[w] = []
+        if w in skip_weeks:
+            plan[w] = week_plan
+            continue
         used_today = {}
         cells = [(blk, day) for blk in range(4) for day in range(1, 6)]
         for blk, day in cells:
@@ -303,12 +310,13 @@ def plan_duty(all_members, w1, w2, per_cell=2):
     counts_map = count_map()
     stats = {"min": 0, "max": 0, "avg": 0, "zero": []}
     if people:
-        counts = sorted(counts_map[id(p)] for p in people)
+        counts = sorted(counts_map[id(p)] + int(seed_counts.get(p.name, 0)) for p in people)
         stats = {
             "min": counts[0],
             "max": counts[-1],
             "avg": round(sum(counts) / len(counts), 1),
-            "zero": [p.name for p in people if counts_map[id(p)] == 0],
+            "zero": [p.name for p in people
+                     if counts_map[id(p)] + int(seed_counts.get(p.name, 0)) == 0],
         }
     return plan, notes, stats
 
