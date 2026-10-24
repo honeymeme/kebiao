@@ -17,6 +17,7 @@ STATIC = os.path.join(HERE, "static")
 
 LOCK = threading.Lock()
 DATA_CACHE = {}   # job_id -> 已解析的成员数据，避免生成时再解析一遍
+INDEX_CACHE = {}  # job_id -> 查询索引（成员资料 + 排班明细）
 
 
 
@@ -66,6 +67,36 @@ class Handler(BaseHTTPRequestHandler):
             names = {"empty": "空课表.zip", "duty": "值班表.zip"}
             if kind in names:
                 self._file(os.path.join(job_dir(jid), names[kind]), "application/zip", names[kind])
+                return
+            if kind == "member":
+                kw = (q.get("q") or [""])[0].strip()
+                dept = (q.get("dept") or [""])[0].strip()
+                idx = INDEX_CACHE.get(jid, [])
+                hits = []
+                for x in idx:
+                    if dept and x["dept"] != dept:
+                        continue
+                    if kw:
+                        if kw in x["name"] or kw in x["klass"] or kw in x["phone"]:
+                            hits.append(x)
+                    elif dept:
+                        hits.append(x)
+                hits.sort(key=lambda x: (x["name"] != kw, x["name"]))
+                self._json({"matches": hits[:40], "depts": sorted({x["dept"] for x in idx})})
+                return
+            if kind == "pdf":
+                name = (q.get("name") or [""])[0]
+                idx = INDEX_CACHE.get(jid, [])
+                hit = next((x for x in idx if x["name"] == name and x["pdf"]), None)
+                if not hit:
+                    self._json({"error": "没有这个人的课表文件"}, 404)
+                    return
+                base = os.path.abspath(os.path.join(job_dir(jid), "src"))
+                full = os.path.abspath(os.path.join(base, hit["pdf"]))
+                if not full.startswith(base) or not os.path.exists(full):
+                    self._json({"error": "文件不存在"}, 404)
+                    return
+                self._file(full, "application/pdf", os.path.basename(full))
                 return
             if kind == "detail":
                 self._file(
@@ -217,16 +248,24 @@ class Handler(BaseHTTPRequestHandler):
                 if not members:
                     continue
                 pipeline.build_empty(pipeline.EMPTY_TPL, dept, members, w1, w2,
-                                     os.path.join(out_empty, "%s部门空课表.xlsx" % dept))
+                                     os.path.join(out_empty, "%s空课表.xlsx" % dept))
 
         import history as history_mod
-        hist_counts, hist_weeks, _hist_detail = history_mod.load_history(src)
+        hist_counts, hist_weeks, hist_detail = history_mod.load_history(src)
         skipped = sorted(w for w in hist_weeks if w1 <= w <= w2)
         if skipped:
             warnings.append("已按上传的值班表跳过：" + "、".join("第%d周" % w for w in skipped)
                             + "（这些周已排的人次已计入后续排班）")
+        boost = {}
+        for k, v in (body.get("boost") or {}).items():
+            try:
+                n = int(v)
+            except (TypeError, ValueError):
+                continue
+            if n > 0:
+                boost[k] = n
         plan, notes, duty_stats = pipeline.plan_duty(
-            data, w1, w2, seed_counts=hist_counts, skip_weeks=hist_weeks)
+            data, w1, w2, seed_counts=hist_counts, skip_weeks=hist_weeks, boost=boost)
         duty_files = []
         for w in range(w1, w2 + 1):
             if w in hist_weeks:
@@ -244,8 +283,40 @@ class Handler(BaseHTTPRequestHandler):
             for lst in wk.values():
                 for p in lst:
                     counts[p.name] = counts.get(p.name, 0) + 1
+        # 每个人的排班明细（供"查人"和解析明细使用）
+        assign = {}
+        # 先放上传的值班表里已经排好的（标记为已有）
+        for w, slots in (hist_detail or {}).items():
+            for (blk, day), names in slots.items():
+                for n in names:
+                    assign.setdefault(n, []).append(
+                        {"week": w, "day": day, "block": blk, "history": True})
+        for w in range(w1, w2 + 1):
+            for (blk, day), lst in plan.get(w, {}).items():
+                for p in lst:
+                    assign.setdefault(p.name, []).append(
+                        {"week": w, "day": day, "block": blk})
+
+        want_detail = bool(body.get("detail"))
         detail_path = os.path.join(d, "解析明细.xlsx")
-        pipeline.build_detail(data, w1, w2, detail_path, counts)
+        if want_detail:
+            pipeline.build_detail(data, w1, w2, detail_path, counts, assign)
+        idx = []
+        for dept, members in data.items():
+            for m in members:
+                rel = ""
+                try:
+                    if m.pdf_path and os.path.exists(m.pdf_path):
+                        rel = os.path.relpath(m.pdf_path, src).replace("\\", "/")
+                except Exception:
+                    rel = ""
+                idx.append({
+                    "name": m.name, "klass": m.klass, "phone": m.phone,
+                    "dept": dept, "minister": bool(m.is_minister),
+                    "sid": getattr(m, "sid", ""), "pdf": rel,
+                    "shifts": assign.get(m.name, []),
+                })
+        INDEX_CACHE[jid] = idx
 
         folders = [(out_duty, "值班表.zip", duty_files)]
         if mode == "pdf":
@@ -263,7 +334,7 @@ class Handler(BaseHTTPRequestHandler):
             "depts": list(data.keys()),
             "empty": ("/api/download?job=%s&kind=empty" % jid) if mode == "pdf" else None,
             "duty": "/api/download?job=%s&kind=duty" % jid,
-            "detail": "/api/download?job=%s&kind=detail" % jid,
+            "detail": ("/api/download?job=%s&kind=detail" % jid) if want_detail else None,
             "skipped_weeks": skipped,
             "warnings": warnings[:50],
             "duty_weeks": len(duty_files),

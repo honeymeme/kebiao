@@ -27,6 +27,18 @@ def cn_num(n):
     return CN_DIGITS[n // 10] + "十" + CN_DIGITS[n % 10]
 
 
+def canon_dept(name):
+    name = (name or "").strip()
+    if not name:
+        return name
+    if name in DEPT_ORDER:
+        return name
+    for c in DEPT_ORDER:
+        if c.startswith(name) or name.startswith(c):
+            return c
+    return name
+
+
 def discover_depts(src_dir):
     """返回 {部门: 目录}"""
     depts = {}
@@ -34,7 +46,7 @@ def discover_depts(src_dir):
     dirs = [e for e in entries if os.path.isdir(os.path.join(src_dir, e))]
     files = [e for e in entries if e.lower().endswith(".pdf")]
     for d in dirs:
-        name = re.sub(r"课表$", "", d).strip()
+        name = canon_dept(re.sub(r"课表$", "", d).strip())
         depts[name] = os.path.join(src_dir, d)
     if files:
         # 没有子目录时，按文件名首段分组
@@ -124,7 +136,7 @@ DEPT_ORDER = ["办公室", "科协", "青协", "生活部", "文体部", "宣传
 def build_empty(template, dept, members, w1, w2, out_path):
     wb = openpyxl.load_workbook(template)
     ws = wb.worksheets[0]
-    ws["B2"] = "%s部门空课表" % dept
+    ws["B2"] = "%s空课表" % dept
 
     grid = {}
     for blk in range(len(BLOCKS)):
@@ -192,8 +204,13 @@ def build_empty(template, dept, members, w1, w2, out_path):
     return grid
 
 
-def plan_duty(all_members, w1, w2, per_cell=2, seed_counts=None, skip_weeks=None):
-    """按周排班。seed_counts = 已排过的次数（来自上传的值班表），skip_weeks = 已排好的周。"""
+def plan_duty(all_members, w1, w2, per_cell=2, seed_counts=None, skip_weeks=None, boost=None):
+    """按周排班。seed_counts = 已排过的次数，skip_weeks = 已排好的周，
+    boost = {"部门|姓名": 加权次数}，用于人工指定"这个人多排几次"。"""
+    boost = boost or {}
+
+    def _b(p):
+        return int(boost.get("%s|%s" % (p.dept, p.name), 0))
     people = []
     for dept, ms in all_members.items():
         for m in ms:
@@ -224,7 +241,7 @@ def plan_duty(all_members, w1, w2, per_cell=2, seed_counts=None, skip_weeks=None
             def key(p):
                 # 分三档：没排够的干事(0) > 已排够次数的干事(1) > 部长(2)
                 # 这样某个时段只有两名干事可用时，也不会把他们钉死在那儿。
-                c = count[id(p)]
+                c = max(0, count[id(p)] - _b(p))
                 if p.is_minister:
                     tier = 2       # 部长排最后
                 elif c >= cap + 2:
@@ -243,6 +260,9 @@ def plan_duty(all_members, w1, w2, per_cell=2, seed_counts=None, skip_weeks=None
                         p.name)
             cands.sort(key=key)
             chosen = cands[:per_cell]
+            # 这一格没有干事可排时，只排 1 个部长（不占用两个名额）
+            if chosen and len(chosen) >= 2 and all(p.is_minister for p in chosen):
+                chosen = chosen[:1]
             week_plan[(blk, day)] = chosen
             for p in chosen:
                 count[id(p)] += 1
@@ -311,12 +331,15 @@ def plan_duty(all_members, w1, w2, per_cell=2, seed_counts=None, skip_weeks=None
     stats = {"min": 0, "max": 0, "avg": 0, "zero": []}
     if people:
         counts = sorted(counts_map[id(p)] + int(seed_counts.get(p.name, 0)) for p in people)
+        zero_people = [p for p in people
+                       if counts_map[id(p)] + int(seed_counts.get(p.name, 0)) == 0]
         stats = {
             "min": counts[0],
             "max": counts[-1],
             "avg": round(sum(counts) / len(counts), 1),
-            "zero": [p.name for p in people
-                     if counts_map[id(p)] + int(seed_counts.get(p.name, 0)) == 0],
+            "zero": [p.name for p in zero_people],
+            "zero_ministers": [p.name for p in zero_people if p.is_minister],
+            "zero_members": [p.name for p in zero_people if not p.is_minister],
         }
     return plan, notes, stats
 
@@ -332,7 +355,7 @@ def build_duty(template, week, week_plan, notes, out_path):
             cell.value = None
             people = week_plan.get((blk, day), [])
             if people:
-                cell.value = "\n".join("%s/%s" % (p.name, p.phone) for p in people)
+                cell.value = "\n".join("%s\n%s" % (p.name, p.phone) for p in people)
                 cell.font = Font(name="微软雅黑", sz=11)
                 cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
     if notes:
@@ -342,12 +365,13 @@ def build_duty(template, week, week_plan, notes, out_path):
     return out_path
 
 
-def build_detail(data, w1, w2, out_path, counts=None):
-    """生成"解析明细.xlsx"：每人每格的有课/空闲周次，方便抽查。"""
+def build_detail(data, w1, w2, out_path, counts=None, assign=None):
+    """生成"解析明细.xlsx"：每人每格的有课/空闲周次 + 实际排班时间。"""
+    assign = assign or {}
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "汇总"
-    head = ["部门", "姓名", "班级", "联系方式", "部长", "总排班次数"]
+    head = ["部门", "姓名", "班级", "联系方式", "部长", "总排班次数", "值班时间"]
     ws.append(head)
 
     ws2 = wb.create_sheet("时段明细")
@@ -355,8 +379,17 @@ def build_detail(data, w1, w2, out_path, counts=None):
 
     for dept, members in data.items():
         for m in members:
+            shifts = sorted(assign.get(m.name, []),
+                            key=lambda s: (s["week"], s["day"], s["block"]))
+            when = "\n".join(
+                "第%d周 %s %s%s" % (s["week"], WEEKDAY_NAMES[s["day"] - 1], BLOCK_TIMES[s["block"]],
+                                    "（已有）" if s.get("history") else "")
+                for s in shifts)
+            # 次数把"上传的值班表里已排的"也算进去
+            n = len(shifts) if assign else (counts or {}).get(m.name, "")
             ws.append([dept, m.name, m.klass, m.phone, "是" if m.is_minister else "",
-                       (counts or {}).get(m.name, "")])
+                       n, when])
+            ws.row_dimensions[ws.max_row].height = max(20, 16 * max(1, len(shifts)) + 4)
             for day in range(1, 6):
                 for blk in range(4):
                     busy = sorted(m.busy.get((day, blk)) or [])
@@ -364,17 +397,46 @@ def build_detail(data, w1, w2, out_path, counts=None):
                     ws2.append([dept, m.name, WEEKDAY_NAMES[day - 1], BLOCK_TIMES[blk],
                                 fmt_weeks(busy) or "（无课）", fmt_weeks(free) or "（全满）"])
 
-    for sheet in (ws, ws2):
-        widths = {"A": 10, "B": 10, "C": 14, "D": 16, "E": 8, "F": 26}
-        for col, w in widths.items():
-            sheet.column_dimensions[col].width = w
-        for cell in sheet[1]:
-            cell.font = openpyxl.styles.Font(name="微软雅黑", bold=True, sz=11)
-        for row in sheet.iter_rows(min_row=2):
-            for cell in row:
-                cell.font = openpyxl.styles.Font(name="微软雅黑", sz=10)
-                cell.alignment = openpyxl.styles.Alignment(horizontal="left", vertical="center")
+    center = openpyxl.styles.Alignment(horizontal="center", vertical="center")
+    left_wrap = openpyxl.styles.Alignment(horizontal="left", vertical="top", wrap_text=True)
+    thin = openpyxl.styles.Side(style="thin", color="D9D9D9")
+    border = openpyxl.styles.Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    # 汇总表
+    for col, w in {"A": 10, "B": 10, "C": 15, "D": 16, "E": 8, "F": 12, "G": 46}.items():
+        ws.column_dimensions[col].width = w
+    for cell in ws[1]:
+        cell.font = openpyxl.styles.Font(name="微软雅黑", bold=True, sz=11)
+        cell.alignment = center
+        cell.fill = openpyxl.styles.PatternFill("solid", fgColor="EFF3FA")
+        cell.border = border
+    ws.row_dimensions[1].height = 22
+    for row in ws.iter_rows(min_row=2):
+        for cell in row:
+            cell.font = openpyxl.styles.Font(name="微软雅黑", sz=10)
+            cell.border = border
+            if cell.column == 7:
+                cell.alignment = left_wrap
+            else:
+                cell.alignment = center
     ws.freeze_panes = "A2"
+    ws.auto_filter.ref = "A1:G%d" % ws.max_row
+
+    # 时段明细
+    for col, w in {"A": 10, "B": 10, "C": 8, "D": 16, "E": 26, "F": 22}.items():
+        ws2.column_dimensions[col].width = w
+    for cell in ws2[1]:
+        cell.font = openpyxl.styles.Font(name="微软雅黑", bold=True, sz=11)
+        cell.alignment = center
+        cell.fill = openpyxl.styles.PatternFill("solid", fgColor="EFF3FA")
+        cell.border = border
+    ws2.row_dimensions[1].height = 22
+    for row in ws2.iter_rows(min_row=2):
+        for cell in row:
+            cell.font = openpyxl.styles.Font(name="微软雅黑", sz=10)
+            cell.alignment = center
+            cell.border = border
     ws2.freeze_panes = "A2"
+    ws2.auto_filter.ref = "A1:F%d" % ws2.max_row
     wb.save(out_path)
     return out_path

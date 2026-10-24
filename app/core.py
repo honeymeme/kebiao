@@ -30,6 +30,7 @@ class Member:
         self.dept = dept
         self.is_minister = is_minister
         self.pdf_path = pdf_path
+        self.sid = ""
         self.busy = {}      # (day, block) -> set(weeks)
         self.error = None
 
@@ -179,6 +180,15 @@ def parse_pdf(member):
                 for table in page.extract_tables() or []:
                     if not table:
                         continue
+                    if not member.sid:
+                        for row in table[:2]:
+                            for c in row:
+                                m = re.search(r"学号\s*[:：]\s*([A-Za-z0-9]+)", _clean(c))
+                                if m:
+                                    member.sid = m.group(1)
+                                    break
+                            if member.sid:
+                                break
                     hdr, best, best_map = None, 0, None
                     for i, row in enumerate(table):
                         cd = {}
@@ -223,7 +233,7 @@ def fmt_weeks(weeks):
 def build_empty_sheet(template, dept, members, w1, w2, out_path):
     wb = openpyxl.load_workbook(template)
     ws = wb.worksheets[0]
-    ws["B2"] = "%s部门空课表" % dept
+    ws["B2"] = "%s空课表" % dept
 
     # 计算每格文字
     grid = {}   # (block, day) -> [(name, weeks_str, is_min)]

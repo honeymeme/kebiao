@@ -11,13 +11,26 @@ BLACK = ("00000000", "FF000000", "000000")
 
 
 def _is_special(color):
-    """非黑色（红、蓝、绿……）都当作部长标记。"""
+    """红/蓝/绿等彩色才算部长标记；黑色、深灰、白色都算正文。"""
     if color is None:
         return False
     rgb = getattr(color, "rgb", None)
     if not isinstance(rgb, str):
         return False
-    return rgb.upper() not in BLACK
+    s = rgb.upper()
+    if s in BLACK:
+        return False
+    if len(s) == 8:
+        s = s[2:]
+    if len(s) != 6:
+        return False
+    try:
+        r, g, b = int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16)
+    except ValueError:
+        return False
+    if max(r, g, b) - min(r, g, b) <= 40:   # 灰阶（黑/深灰/白）不算标记
+        return False
+    return True
 
 
 def _weeks_from_text(s):
@@ -64,7 +77,13 @@ def _dept_name(ws, path):
     name = re.sub(r"(部门)?空课表$", "", title).strip()
     if not name:
         name = re.sub(r"(部门)?空课表$", "", os.path.splitext(os.path.basename(path))[0]).strip()
-    return name or "未命名部门"
+    if not name:
+        return "未命名部门"
+    try:
+        from pipeline import canon_dept
+        return canon_dept(name)
+    except Exception:
+        return name
 
 
 def parse_empty_sheet(path):
@@ -72,8 +91,9 @@ def parse_empty_sheet(path):
     ws = wb.worksheets[0]
     dept = _dept_name(ws, path)
 
-    free = {}          # name -> {(day, blk): set(weeks)}
-    minister = set()   # 红字视为部长
+    free = {}              # name -> {(day, blk): set(weeks)}
+    grid_minister = set()  # 大格里标了颜色的人
+    info_minister = set()  # 底部信息表里标了颜色的人
     order = []
 
     for blk, row in enumerate(BLOCK_ROWS):
@@ -92,7 +112,7 @@ def parse_empty_sheet(path):
                     order.append(name)
                 free[name][(day, blk)] = weeks
                 if red:
-                    minister.add(name)
+                    grid_minister.add(name)
 
     # 底部信息收集表
     info = {}
@@ -107,10 +127,14 @@ def parse_empty_sheet(path):
         is_red = _is_special(c.font.color if c.font else None)
         info[name] = (str(klass).strip(), str(phone).strip())
         if is_red:
-            minister.add(name)
+            info_minister.add(name)
         if name not in free:
             free[name] = {}
             order.append(name)
+
+    # 底部信息表的颜色更可靠（老版本的表格大格里可能整格都是红的），
+    # 所以信息表里出现了颜色标记就只认信息表。
+    minister = info_minister if info_minister else grid_minister
 
     members = []
     for name in order:
