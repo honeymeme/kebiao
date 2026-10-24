@@ -187,6 +187,10 @@ class Handler(BaseHTTPRequestHandler):
                 json.dump(meta, f, ensure_ascii=False)
 
         DATA_CACHE.pop(jid, None)   # 有新文件进来，缓存作废
+        try:
+            os.remove(os.path.join(d, "parsed.json"))
+        except OSError:
+            pass
         if defer:
             # 先把文件收下，等全部传完再统一解析一次（避免每个包都重跑一遍检查）
             self._json({"job": jid, "files": meta["zips"], "deferred": True})
@@ -194,6 +198,10 @@ class Handler(BaseHTTPRequestHandler):
 
         report, data = pipeline.check(src, meta["order"])
         DATA_CACHE[jid] = data
+        try:
+            pipeline.save_parsed(data, src, os.path.join(d, "parsed.json"))
+        except Exception:
+            pass
         report["job"] = jid
         report["files"] = meta["zips"]
         self._json(report)
@@ -208,6 +216,10 @@ class Handler(BaseHTTPRequestHandler):
         meta = json.load(open(meta_path, encoding="utf-8"))
         report, data = pipeline.check(src, meta.get("order"))
         DATA_CACHE[jid] = data
+        try:
+            pipeline.save_parsed(data, src, os.path.join(d, "parsed.json"))
+        except Exception:
+            pass
         report["job"] = jid
         report["files"] = meta.get("zips", [])
         self._json(report)
@@ -233,9 +245,15 @@ class Handler(BaseHTTPRequestHandler):
                 meta = json.load(open(meta_path, encoding="utf-8"))
             except Exception:
                 meta = {}
-        mode, data = pipeline.load_any(src, meta.get("order"))
+        has_sheet = any(f.lower().endswith((".xlsx", ".xlsm")) and "值班表" not in f
+                        for f in os.listdir(src))
+        mode = "sheet" if has_sheet else "pdf"
         if jid in DATA_CACHE:
             data = DATA_CACHE[jid]
+        else:
+            data = pipeline.load_parsed(os.path.join(d, "parsed.json"), src)
+            if data is None:
+                mode, data = pipeline.load_any(src, meta.get("order"))
         out_empty = os.path.join(d, "空课表")
         out_duty = os.path.join(d, "值班表")
         for p in (out_empty, out_duty):

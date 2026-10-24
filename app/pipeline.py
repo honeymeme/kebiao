@@ -440,3 +440,53 @@ def build_detail(data, w1, w2, out_path, counts=None, assign=None):
     ws2.auto_filter.ref = "A1:F%d" % ws2.max_row
     wb.save(out_path)
     return out_path
+
+
+# ---------- 解析结果磁盘缓存（免费服务器内存小，进程重启后不用重新解析） ----------
+def save_parsed(data, src_dir, path):
+    import json
+    out = {}
+    for dept, members in data.items():
+        arr = []
+        for m in members:
+            rel = ""
+            try:
+                if m.pdf_path:
+                    rel = os.path.relpath(m.pdf_path, src_dir).replace("\\", "/")
+            except Exception:
+                rel = ""
+            arr.append({
+                "n": m.name, "k": m.klass, "p": m.phone,
+                "sid": getattr(m, "sid", ""),
+                "min": 1 if m.is_minister else 0,
+                "pdf": rel,
+                "busy": {"%d|%d" % (d, b): sorted(ws)
+                         for (d, b), ws in (m.busy or {}).items()},
+            })
+        out[dept] = arr
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(out, f, ensure_ascii=False)
+
+
+def load_parsed(path, src_dir):
+    import json
+    if not os.path.exists(path):
+        return None
+    try:
+        raw = json.load(open(path, encoding="utf-8"))
+    except Exception:
+        return None
+    data = {}
+    for dept, arr in raw.items():
+        members = []
+        for a in arr:
+            pdf = os.path.join(src_dir, a["pdf"]) if a.get("pdf") else ""
+            m = Member(a["n"], a.get("k", ""), a.get("p", ""), dept, bool(a.get("min")), pdf)
+            m.sid = a.get("sid", "")
+            m.busy = {}
+            for k, v in (a.get("busy") or {}).items():
+                d, b = k.split("|")
+                m.busy[(int(d), int(b))] = set(v)
+            members.append(m)
+        data[dept] = members
+    return data
