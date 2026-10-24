@@ -48,6 +48,15 @@
   .dl a{flex:1 1 200px;text-align:center;text-decoration:none;background:var(--accent);color:#fff;
         padding:13px 16px;border-radius:10px;font-weight:600;font-size:15px}
   .dl a:hover{background:var(--accent-2)}
+  .person{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-top:10px;background:#fcfcfd}
+  .person .nm{font-weight:600;font-size:15px;margin-bottom:6px}
+  .person .kv{font-size:13px;color:#374151;line-height:1.9}
+  .person .kv b{color:var(--muted);font-weight:400;display:inline-block;width:56px}
+  .person .shifts{font-size:13px;color:#374151;line-height:1.8;margin-top:4px}
+  .tag{display:inline-block;font-size:11.5px;padding:1px 7px;border-radius:6px;background:#eef2ff;color:#1d4ed8;margin-left:6px}
+  .tag.min{background:#fef2f2;color:#b91c1c}
+  .namelink{color:#b45309;text-decoration:underline dotted}
+  .namelink:hover{color:#92400e}
   .ghost-link{display:inline-block;font-size:13px;color:var(--accent-2);text-decoration:none;
               border:1px dashed #c7d2fe;border-radius:9px;padding:8px 12px;background:#f8faff}
   .ghost-link:hover{background:#eef2ff}
@@ -82,7 +91,7 @@
     <div id="drop">
       <strong>把文件拖到这里，或点一下选择</strong>
       <small>① 课表 PDF 压缩包（按部门分文件夹，部长放「部长/」子文件夹）<br>
-      ② 已经做好的「XX部门空课表.xlsx」，可多个一起选，只排值班表<br>
+      ② 已经做好的「XX空课表.xlsx」，可多个一起选，只排值班表<br>
       ③ 已经排好的「第X周系办值班表.xlsx」——这些周自动跳过，已排次数计入后续排班</small>
     </div>
     <input id="file" type="file" accept=".zip,.xlsx,.xlsm" multiple class="hide">
@@ -99,6 +108,11 @@
       <label class="muted">到第 <select id="w2"></select> 周</label>
       <span id="wsum" class="muted"></span>
     </div>
+    <div class="row" style="margin-top:10px">
+      <label class="muted" style="display:flex;align-items:center;gap:6px;cursor:pointer">
+        <input type="checkbox" id="detailChk"> 同时生成「解析明细」（核对用，会慢十几秒）
+      </label>
+    </div>
     <div class="row" style="margin-top:14px">
       <button id="go">开始生成</button>
     </div>
@@ -108,6 +122,17 @@
   <section class="card hide" id="result">
     <h2><span class="step">3</span>下载结果</h2>
     <div id="resultBody"></div>
+  </section>
+
+  <section class="card hide" id="searchCard">
+    <h2>🔍 查人</h2>
+    <div class="row">
+      <input id="q" placeholder="输入姓名 / 班级 / 电话" style="flex:1;min-width:160px;font:inherit;
+             padding:9px 12px;border-radius:9px;border:1px solid var(--line)">
+      <select id="deptSel"><option value="">全部部门</option></select>
+      <button id="searchBtn">查询</button>
+    </div>
+    <div id="searchBody" style="margin-top:12px"></div>
   </section>
 </div>
 
@@ -279,11 +304,20 @@ $('#go').onclick = async () => {
     setPhase('排班并生成表格');
     const gr = await fetch('/api/generate', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({job: jobId, start: a, end: b})
+      body: JSON.stringify({job: jobId, start: a, end: b,
+                            detail: $('#detailChk').checked, boost: loadBoosts()})
     });
     const g = await gr.json();
     if (!gr.ok) throw new Error(g.error || '生成失败');
+    LAST_JOB = jobId;
     renderResult(g);
+    const sel = $('#deptSel');
+    if (sel){
+      sel.innerHTML = '<option value="">全部部门</option>'
+        + (g.depts || []).map(x => '<option value="' + x + '">' + x + '</option>').join('');
+    }
+    $('#searchCard').classList.remove('hide');
+    $('#searchBody').innerHTML = '<div class="muted">生成结果已就绪，上面输入人名就能看到他的资料和排班。</div>';
     $('#genStatus').textContent = '生成完成。';
   } catch (err){
     $('#genStatus').textContent = '出错了：' + err.message;
@@ -292,6 +326,103 @@ $('#go').onclick = async () => {
     $('#go').disabled = false;
   }
 };
+
+let LAST_JOB = null;
+
+/* ---------- 人工"优先排班"设置（存在本机） ---------- */
+const BOOST_KEY = 'pkb_boost';
+function loadBoosts(){
+  try { return JSON.parse(localStorage.getItem(BOOST_KEY) || '{}'); } catch (e) { return {}; }
+}
+function saveBoosts(b){ localStorage.setItem(BOOST_KEY, JSON.stringify(b)); }
+function bkey(dept, name){ return dept + '|' + name; }
+function setBoost(dept, name, delta){
+  const b = loadBoosts();
+  const k = bkey(dept, name);
+  const v = Math.max(0, (b[k] || 0) + delta);
+  if (v) b[k] = v; else delete b[k];
+  saveBoosts(b);
+  doSearch();
+}
+document.addEventListener('click', ev => {
+  const btn = ev.target.closest && ev.target.closest('[data-boost]');
+  if (!btn) return;
+  ev.preventDefault();
+  setBoost(decodeURIComponent(btn.dataset.dept), decodeURIComponent(btn.dataset.name),
+           parseInt(btn.dataset.boost, 10));
+});
+
+function nameLinks(names){
+  return names.map(n => '<a class="namelink" href="javascript:void(0)" data-n="'
+    + encodeURIComponent(n) + '">' + n + '</a>').join('、');
+}
+document.addEventListener('click', ev => {
+  const a = ev.target.closest && ev.target.closest('.namelink');
+  if (!a) return;
+  ev.preventDefault();
+  $('#q').value = decodeURIComponent(a.dataset.n);
+  $('#searchCard').scrollIntoView({behavior:'smooth', block:'center'});
+  doSearch();
+});
+
+const DAY_NAMES = ['周一', '周二', '周三', '周四', '周五'];
+const SLOT_NAMES = ['8:30-9:50', '10:00-11:50', '13:40-15:20', '15:40-16:30'];
+
+async function doSearch(){
+  if (!LAST_JOB) return;
+  const q = $('#q').value.trim();
+  const dept = $('#deptSel').value;
+  if (!q && !dept) { $('#searchBody').innerHTML = '<div class="muted">输入姓名，或选一个部门看看。</div>'; return; }
+  $('#searchBody').innerHTML = '<div class="muted">查询中…</div>';
+  try {
+    const res = await fetch('/api/download?job=' + LAST_JOB + '&kind=member&q=' + encodeURIComponent(q)
+      + '&dept=' + encodeURIComponent(dept));
+    const d = await res.json();
+    if (!d.matches || !d.matches.length){
+      $('#searchBody').innerHTML = '<div class="muted">没找到「' + (q || dept) + '」。</div>';
+      return;
+    }
+    let html = '';
+    for (const m of d.matches){
+      const shifts = (m.shifts || []).slice().sort((a, b) => a.week - b.week || a.day - b.day || a.block - b.block);
+      html += '<div class="person">'
+        + '<div class="nm">' + m.name
+        + '<span class="tag' + (m.minister ? ' min' : '') + '">' + (m.minister ? '部长' : '干事') + '</span></div>'
+        + '<div class="kv"><div><b>部门</b>' + m.dept + '</div>'
+        + '<div><b>班级</b>' + (m.klass || '—') + '</div>'
+        + '<div><b>学号</b>' + (m.sid || '—') + '</div>'
+        + '<div><b>电话</b>' + (m.phone || '—') + '</div></div>';
+      if (shifts.length){
+        const nh = shifts.filter(s => s.history).length;
+        html += '<div class="shifts"><b style="color:#6b7280;font-weight:400">排班</b> 共 ' + shifts.length
+             + ' 次' + (nh ? '（含已有 ' + nh + ' 次）' : '') + '：<br>'
+             + shifts.map(s => '第' + s.week + '周 ' + (DAY_NAMES[s.day-1] || '') + ' ' + (SLOT_NAMES[s.block] || '')
+                 + (s.history ? '（已有）' : '')).join('、')
+             + '</div>';
+      } else {
+        html += '<div class="shifts"><b style="color:#6b7280;font-weight:400">排班</b> 还没有排到 ' + m.name + '</div>';
+      }
+      const bv = loadBoosts()[bkey(m.dept, m.name)] || 0;
+      html += '<div class="shifts">优先排班：'
+        + '<button class="mini" data-boost="-1" data-dept="' + encodeURIComponent(m.dept)
+        + '" data-name="' + encodeURIComponent(m.name) + '">－</button> <b>' + bv
+        + '</b> 次 <button class="mini" data-boost="1" data-dept="' + encodeURIComponent(m.dept)
+        + '" data-name="' + encodeURIComponent(m.name) + '">＋</button>'
+        + (bv ? ' <span style="color:#059669">（重新生成后生效）</span>' : '')
+        + '</div>';
+      if (m.pdf){
+        html += '<div style="margin-top:8px"><a class="ghost-link" href="/api/download?job=' + LAST_JOB
+             + '&kind=pdf&name=' + encodeURIComponent(m.name) + '">下载 ' + m.name + ' 的课表 PDF</a></div>';
+      }
+      html += '</div>';
+    }
+    $('#searchBody').innerHTML = html;
+  } catch (e){
+    $('#searchBody').innerHTML = '<div class="muted">查询失败：' + e.message + '</div>';
+  }
+}
+$('#searchBtn').onclick = doSearch;
+$('#q').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
 
 function renderProblems(d){
   let html = '<div class="problems" style="margin-top:16px"><b>需要先处理这些问题：</b><ul>';
@@ -306,6 +437,15 @@ function renderResult(d){
   let html = '<div class="muted" style="margin-bottom:12px">周次：第 ' + d.weeks.replace('-', ' – ') + ' 周 · '
            + d.depts.length + ' 个部门 · 值班表 ' + d.duty_weeks + ' 张'
            + (d.mode === 'sheet' ? ' · 数据来源：已做好的空课表' : '') + '</div>';
+  const bAll = loadBoosts();
+  const bKeys = Object.keys(bAll);
+  if (bKeys.length){
+    html += '<div class="muted" style="margin-bottom:12px">已设置优先排班：'
+          + bKeys.map(k => {
+              const [dep, nm] = k.split('|');
+              return nm + ' +' + bAll[k];
+            }).join('、') + '（想让新的设置生效，再点一次生成）</div>';
+  }
   if (d.skipped_weeks && d.skipped_weeks.length){
     html += '<div class="muted" style="margin-bottom:12px">已跳过已有值班表的周：'
           + d.skipped_weeks.map(w => '第' + w + '周').join('、')
@@ -315,7 +455,10 @@ function renderResult(d){
     const s = d.stats;
     html += '<div class="muted" style="margin-bottom:12px">每人排班次数：平均 ' + s.avg
           + ' 次，最少 ' + s.min + ' 次，最多 ' + s.max + ' 次'
-          + (s.zero && s.zero.length ? '<br><span style="color:#b45309">没排到的人：' + s.zero.join('、') + '</span>' : '')
+          + (s.zero_ministers && s.zero_ministers.length
+              ? '<br><span style="color:#b45309">没排到的部长：' + nameLinks(s.zero_ministers) + '</span>' : '')
+          + (s.zero_members && s.zero_members.length
+              ? '<br><span style="color:#b45309">没排到的干事：' + nameLinks(s.zero_members) + '</span>' : '')
           + '</div>';
   }
   html += '<div class="dl">'
