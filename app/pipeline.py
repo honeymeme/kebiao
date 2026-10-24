@@ -175,7 +175,7 @@ def build_empty(template, dept, members, w1, w2, out_path):
                     txt += "\n"      # 换行跟文字放同一段，避免被当成空段丢掉
                 rt.append(TextBlock(InlineFont(rFont="微软雅黑", sz=size, color=color), txt))
             cell.value = rt
-            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            cell.alignment = Alignment(horizontal="center", vertical="top", wrap_text=True)
 
     start = 22
     ws["B21"], ws["C21"], ws["D21"] = "姓名", "班级", "联系方式"
@@ -356,8 +356,8 @@ def build_duty(template, week, week_plan, notes, out_path):
             people = week_plan.get((blk, day), [])
             if people:
                 cell.value = "\n".join("%s\n%s" % (p.name, p.phone) for p in people)
-                cell.font = Font(name="微软雅黑", sz=11)
-                cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+                cell.font = Font(name="微软雅黑", sz=18)
+                cell.alignment = Alignment(horizontal="center", vertical="top", wrap_text=True)
     if notes:
         ws["I3"] = "注：" + "；".join(notes) + "，其余位置正常。"
         ws["I3"].alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
