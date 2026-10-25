@@ -125,7 +125,9 @@ def parse_empty_sheet(path):
         phone = ws.cell(row=r, column=4).value or ""
         c = ws.cell(row=r, column=2)
         is_red = _is_special(c.font.color if c.font else None)
-        info[name] = (str(klass).strip(), str(phone).strip())
+        klass = re.sub(r"\s+", "", str(klass))
+        phone = re.sub(r"\s+", "", str(phone))
+        info[name] = (klass, phone)
         if is_red:
             info_minister.add(name)
         if name not in free:

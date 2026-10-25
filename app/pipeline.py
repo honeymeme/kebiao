@@ -204,10 +204,47 @@ def build_empty(template, dept, members, w1, w2, out_path):
     return grid
 
 
-def plan_duty(all_members, w1, w2, per_cell=2, seed_counts=None, skip_weeks=None, boost=None):
-    """按周排班。seed_counts = 已排过的次数，skip_weeks = 已排好的周，
-    boost = {"部门|姓名": 加权次数}，用于人工指定"这个人多排几次"。"""
+def dept_sequence(all_members):
+    seq = [d for d in DEPT_ORDER if all_members.get(d)]
+    for d in all_members:
+        if d not in seq:
+            seq.append(d)
+    return seq
+
+
+def infer_offset(seq, w1, hist_depts):
+    """根据上传的值班表推测轮值起点（第 w1 周对应哪个部门）"""
+    if not seq or not hist_depts:
+        return 0
+    # 以"最近一次上传的那一周"为锚点，保证后面接着往下轮
+    last_w = max(hist_depts)
+    last_d = hist_depts[last_w]
+    if last_d in seq:
+        return (seq.index(last_d) - (last_w - w1)) % len(seq)
+    best, best_score = 0, -1
+    for off in range(len(seq)):
+        score = sum(1 for w, d in hist_depts.items()
+                    if seq[(w - w1 + off) % len(seq)] == d)
+        if score > best_score:
+            best, best_score = off, score
+    return best
+
+
+def week_dept_map(all_members, w1, w2, skip_weeks=None, offset=0):
+    """第几周由哪个部门负责（skip 的周也占轮值位，保证接得上）"""
+    seq = dept_sequence(all_members)
+    if not seq:
+        return {}
+    skip = set(skip_weeks or ())
+    return {w: seq[(w - w1 + offset) % len(seq)]
+            for w in range(w1, w2 + 1) if w not in skip}
+
+
+def plan_duty(all_members, w1, w2, per_cell=2, seed_counts=None, skip_weeks=None, boost=None,
+               minister_only=None, start_offset=0):
+    """按周排班（一周一个部门）。minister_only = {(day, blk)} 这些格只排部长。"""
     boost = boost or {}
+    minister_only = set(minister_only or ())
 
     def _b(p):
         return int(boost.get("%s|%s" % (p.dept, p.name), 0))
@@ -227,107 +264,86 @@ def plan_duty(all_members, w1, w2, per_cell=2, seed_counts=None, skip_weeks=None
     plan = {}
     notes = {}
 
+    # 一周一个主部门：按部门顺序把周次分下去，轮完再从头开始
+    week_dept = week_dept_map(all_members, w1, w2, skip_weeks, start_offset)
+    # 主部门凑不齐时，可以叫下一个部门的人来补（一周最多两个部门）
+    _seq = dept_sequence(all_members)
+    week_dept_extra = {}
+    if len(_seq) > 1:
+        for _i, _w in enumerate(todo_weeks):
+            extras = []
+            for _k in (1, 2):
+                if len(_seq) > _k:
+                    extras.append(all_members.get(_seq[(_i + _k) % len(_seq)], []))
+            week_dept_extra[_w] = extras
+
     for w in range(w1, w2 + 1):
         week_plan = {}
         notes[w] = []
         if w in skip_weeks:
             plan[w] = week_plan
             continue
+        main_dept = week_dept.get(w, "")
+        members = all_members.get(main_dept, [])
+        if not members:
+            plan[w] = week_plan
+            notes[w].append("这一周没有可用的部门成员")
+            continue
         used_today = {}
         cells = [(blk, day) for blk in range(4) for day in range(1, 6)]
         for blk, day in cells:
-            cands = [p for p in people
-                     if w not in (p.busy.get((day, blk)) or set())]
-            def key(p):
-                # 分三档：没排够的干事(0) > 已排够次数的干事(1) > 部长(2)
-                # 这样某个时段只有两名干事可用时，也不会把他们钉死在那儿。
+            only_min = (day, blk) in minister_only
+
+            def cands_of(plist, dept_rank):
+                out = []
+                for p in plist:
+                    if w in (p.busy.get((day, blk)) or set()):
+                        continue
+                    if only_min and not p.is_minister:
+                        continue
+                    if id(p) in used_today:
+                        continue
+                    out.append((dept_rank, p))
+                return out
+
+            need = 1 if only_min else per_cell
+            pool = cands_of(members, 0)
+            # 本部门凑不齐时，依次叫后面两个部门的人来补（一周最多三个部门）
+            for _idx, _extra in enumerate(week_dept_extra.get(w, [])):
+                if len(pool) >= need:
+                    break
+                pool += cands_of(_extra, _idx + 1)
+
+            def key(item):
+                rank, p = item
                 c = max(0, count[id(p)] - _b(p))
-                if p.is_minister:
-                    tier = 2       # 部长排最后
-                elif c >= cap + 2:
-                    tier = 3       # 干事已经明显超额（比如被钉在某个格子），这种时候让部长顶
-                elif c < cap:
-                    tier = 0
-                else:
-                    tier = 1
-                penalty = 2 if id(p) in used_today else 0
-                dept_idx = DEPT_ORDER.index(p.dept) if p.dept in DEPT_ORDER else 99
-                return (tier,
-                        c + penalty,
-                        c,
-                        dept_idx,
-                        w - last_week[id(p)],
-                        p.name)
-            cands.sort(key=key)
-            chosen = cands[:per_cell]
-            # 这一格没有干事可排时，只排 1 个部长（不占用两个名额）
-            if chosen and len(chosen) >= 2 and all(p.is_minister for p in chosen):
-                chosen = chosen[:1]
+                tier = 2 if p.is_minister else 0
+                return (rank, tier, c, w - last_week[id(p)], p.name)
+
+            pool.sort(key=key)
+            cands = [p for _r, p in pool]
+            # 部长专用格只安排 1 个人
+            chosen = cands[:1] if only_min else cands[:per_cell]
+            # 只要这格有部长，就只留这位部长（干事不再占位）
+            if any(p.is_minister for p in chosen):
+                chosen = [p for p in chosen if p.is_minister][:1]
             week_plan[(blk, day)] = chosen
             for p in chosen:
                 count[id(p)] += 1
                 last_week[id(p)] = w
                 used_today[id(p)] = used_today.get(id(p), 0) + 1
             if len(chosen) < per_cell:
-                notes[w].append("%s %s 只有 %d 人可排" % (WEEKDAY_NAMES[day - 1], BLOCK_TIMES[blk], len(chosen)))
+                notes[w].append("%s %s %s只有 %d 人可排（%s）"
+                                % (WEEKDAY_NAMES[day - 1], BLOCK_TIMES[blk],
+                                   "【部长专用】" if only_min else "",
+                                   len(chosen), week_dept.get(w, "")))
         plan[w] = week_plan
 
-    # ---- 二次平衡：把各人次数拉平（干事优先补位） ----
-    def all_cells():
-        for w in range(w1, w2 + 1):
-            for key, lst in plan[w].items():
-                yield w, key, lst
-
-    def count_map():
-        c = {id(p): 0 for p in people}
-        for _w, _k, lst in all_cells():
+    counts_map = {id(p): 0 for p in people}
+    for w in range(w1, w2 + 1):
+        for lst in plan[w].values():
             for q in lst:
-                c[id(q)] += 1
-        return c
-
-    def works_day(w, day, p):
-        return any(d == day and p in lst for (_b, d), lst in plan[w].items())
-
-    def try_swap(low, high):
-        for w in range(w1, w2 + 1):
-            for (blk, day), lst in plan[w].items():
-                if high not in lst:
-                    continue
-                if w in (low.busy.get((day, blk)) or set()):
-                    continue
-                if works_day(w, day, low):
-                    continue
-                lst[lst.index(high)] = low
-                return True
-        return False
-
-    normal = [p for p in people if not p.is_minister]
-    for _ in range(3000):
-        c = count_map()
-        if not normal:
-            break
-        low = min(normal, key=lambda p: c[id(p)])
-        high = max(people, key=lambda p: c[id(p)])
-        if c[id(high)] - c[id(low)] <= 2:
-            break
-        lows = sorted(normal, key=lambda p: c[id(p)])
-        highs = sorted(people, key=lambda p: c[id(p)], reverse=True)
-        moved = False
-        for lo in lows:
-            for hi in highs:
-                if hi.dept != lo.dept:      # 只在同一个部门内部拉平，不打乱部门优先顺序
-                    continue
-                if c[id(hi)] - c[id(lo)] <= 2:
-                    break
-                if try_swap(lo, hi):
-                    moved = True
-                    break
-            if moved:
-                break
-        if not moved:
-            break
-
-    counts_map = count_map()
+                counts_map[id(q)] += 1
     stats = {"min": 0, "max": 0, "avg": 0, "zero": []}
     if people:
         counts = sorted(counts_map[id(p)] + int(seed_counts.get(p.name, 0)) for p in people)
@@ -358,9 +374,7 @@ def build_duty(template, week, week_plan, notes, out_path):
                 cell.value = "\n".join("%s\n%s" % (p.name, p.phone) for p in people)
                 cell.font = Font(name="微软雅黑", sz=18)
                 cell.alignment = Alignment(horizontal="center", vertical="top", wrap_text=True)
-    if notes:
-        ws["I3"] = "注：" + "；".join(notes) + "，其余位置正常。"
-        ws["I3"].alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
+    # 备注不再写进表格（会撑满 I 列），缺少人员的提示只在网页上显示
     wb.save(out_path)
     return out_path
 

@@ -282,8 +282,38 @@ class Handler(BaseHTTPRequestHandler):
                 continue
             if n > 0:
                 boost[k] = n
+        minister_only = set()
+        for item in (body.get("minister_only") or []):
+            try:
+                dy, bk = [int(x) for x in str(item).split(",")]
+                minister_only.add((dy, bk))
+            except (ValueError, TypeError):
+                continue
+        # 从上传的值班表里看出那几周是哪个部门在值班
+        name2dept = {}
+        for _dept, _ms in data.items():
+            for _m in _ms:
+                name2dept[_m.name] = _dept
+        hist_dept = {}
+        hist_votes = {}
+        for _w, _slots in (hist_detail or {}).items():
+            names = [n for lst in _slots.values() for n in lst]
+            votes = {}
+            for n in names:
+                dp = name2dept.get(n)
+                if dp:
+                    votes[dp] = votes.get(dp, 0) + 1
+            if votes:
+                ordered = sorted(votes.items(), key=lambda kv: -kv[1])
+                hist_dept[_w] = ordered[0][0]
+                hist_votes[_w] = [[k, v] for k, v in ordered[:3]]
+        seq = pipeline.dept_sequence(data)
+        offset = pipeline.infer_offset(seq, w1, hist_dept)
+
         plan, notes, duty_stats = pipeline.plan_duty(
-            data, w1, w2, seed_counts=hist_counts, skip_weeks=hist_weeks, boost=boost)
+            data, w1, w2, seed_counts=hist_counts, skip_weeks=hist_weeks, boost=boost,
+            minister_only=minister_only, start_offset=offset)
+        week_map = pipeline.week_dept_map(data, w1, w2, hist_weeks, offset)
         duty_files = []
         for w in range(w1, w2 + 1):
             if w in hist_weeks:
@@ -301,6 +331,20 @@ class Handler(BaseHTTPRequestHandler):
             for lst in wk.values():
                 for p in lst:
                     counts[p.name] = counts.get(p.name, 0) + 1
+        # 每周的部门/人次/人员明细（给结果页做汇总）
+        week_detail = {}
+        for w in range(w1, w2 + 1):
+            if w in hist_weeks or not plan.get(w):
+                continue
+            by = {}
+            for lst in plan[w].values():
+                for p in lst:
+                    by.setdefault(p.dept, []).append(p.name)
+            week_detail[str(w)] = [
+                {"dept": k, "count": len(v), "names": v}
+                for k, v in sorted(by.items(), key=lambda kv: -len(kv[1]))
+            ]
+
         # 每个人的排班明细（供"查人"和解析明细使用）
         assign = {}
         # 先放上传的值班表里已经排好的（标记为已有）
@@ -354,6 +398,10 @@ class Handler(BaseHTTPRequestHandler):
             "duty": "/api/download?job=%s&kind=duty" % jid,
             "detail": ("/api/download?job=%s&kind=detail" % jid) if want_detail else None,
             "skipped_weeks": skipped,
+            "week_dept": {str(k): v for k, v in week_map.items()},
+            "week_detail": week_detail,
+            "history_dept": {str(k): v for k, v in hist_dept.items()},
+            "history_votes": {str(k): v for k, v in hist_votes.items()},
             "warnings": warnings[:50],
             "duty_weeks": len(duty_files),
             "stats": duty_stats,
