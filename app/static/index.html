@@ -478,9 +478,14 @@ async function doSearch(){
         + '" data-name="' + encodeURIComponent(m.name) + '">＋</button>'
         + (bv ? ' <span style="color:#059669">（重新生成后生效）</span>' : '')
         + '</div>';
-      if (m.pdf){
+      if (m.pdf || m.sheet){
+        const label = m.pdf ? ('下载 ' + m.name + ' 的课表 PDF')
+                            : ('下载 ' + m.name + ' 所在的' + m.dept + '空课表（已高亮）');
         html += '<div style="margin-top:8px"><a class="ghost-link" href="/api/download?job=' + LAST_JOB
-             + '&kind=pdf&name=' + encodeURIComponent(m.name) + '">下载 ' + m.name + ' 的课表 PDF</a></div>';
+             + '&kind=pdf&name=' + encodeURIComponent(m.name) + '">' + label + '</a>'
+             + (m.pdf ? '' : '<div class="muted" style="margin-top:6px;font-size:12px">'
+                 + '这个人没有单独的课表 PDF，给的是部门空课表，他的格子已标红加粗、信息表整行标黄。</div>')
+             + '</div>';
       }
       html += '</div>';
     }
