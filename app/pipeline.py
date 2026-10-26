@@ -504,3 +504,55 @@ def load_parsed(path, src_dir):
             members.append(m)
         data[dept] = members
     return data
+
+
+def highlight_member(src_xlsx, name, out_path):
+    """复制一份空课表，把某个人在格子里加粗变红、信息表那一行整行标黄。"""
+    import openpyxl
+    from openpyxl.cell.rich_text import CellRichText, TextBlock
+    from openpyxl.cell.text import InlineFont
+    from openpyxl.styles import PatternFill, Font
+
+    wb = openpyxl.load_workbook(src_xlsx, rich_text=True)
+    ws = wb.worksheets[0]
+    hit = False
+    yellow = PatternFill("solid", fgColor="FFF2CC")
+
+    # 只把他自己那一行改成"加粗 + 下划线 + 深红"（和部长的鲜红区分开）
+    for base in (4, 8, 12, 16):
+        for day in range(1, 6):
+            cell = ws.cell(row=base, column=3 + day)
+            v = cell.value
+            if not isinstance(v, CellRichText):
+                continue
+            blocks, changed = [], False
+            for b in v:
+                if not isinstance(b, TextBlock):
+                    blocks.append(b)
+                    continue
+                parts = b.text.split("\n")
+                if name not in b.text:
+                    blocks.append(b)
+                    continue
+                for i, part in enumerate(parts):
+                    tail = "\n" if i < len(parts) - 1 else ""
+                    if name in part:
+                        blocks.append(TextBlock(
+                            InlineFont(rFont="微软雅黑", sz=b.font.sz or 10,
+                                       b=True, u="single", color="FFC00000"), part + tail))
+                        changed = True
+                    else:
+                        blocks.append(TextBlock(b.font, part + tail))
+            if changed:
+                cell.value = CellRichText(blocks)
+                hit = True
+
+    for r in range(21, ws.max_row + 1):
+        if str(ws.cell(row=r, column=2).value or "").strip() == name:
+            for c in (2, 3, 4):
+                ws.cell(row=r, column=c).fill = yellow
+            hit = True
+            break
+
+    wb.save(out_path)
+    return hit

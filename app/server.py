@@ -87,16 +87,28 @@ class Handler(BaseHTTPRequestHandler):
             if kind == "pdf":
                 name = (q.get("name") or [""])[0]
                 idx = INDEX_CACHE.get(jid, [])
-                hit = next((x for x in idx if x["name"] == name and x["pdf"]), None)
+                hit = next((x for x in idx if x["name"] == name and (x["pdf"] or x["sheet"])), None)
                 if not hit:
                     self._json({"error": "没有这个人的课表文件"}, 404)
                     return
                 base = os.path.abspath(os.path.join(job_dir(jid), "src"))
-                full = os.path.abspath(os.path.join(base, hit["pdf"]))
+                rel = hit["pdf"] or hit["sheet"]
+                full = os.path.abspath(os.path.join(base, rel))
                 if not full.startswith(base) or not os.path.exists(full):
                     self._json({"error": "文件不存在"}, 404)
                     return
-                self._file(full, "application/pdf", os.path.basename(full))
+                if hit["pdf"]:
+                    self._file(full, "application/pdf", os.path.basename(full))
+                    return
+                # 没有个人的课表 PDF：给一份"高亮过的部门空课表"
+                out = os.path.join(job_dir(jid), "高亮_%s_%s.xlsx" % (hit["dept"], name))
+                try:
+                    pipeline.highlight_member(full, name, out)
+                except Exception:
+                    out = full
+                self._file(out,
+                           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                           os.path.basename(out))
                 return
             if kind == "detail":
                 self._file(
@@ -372,10 +384,13 @@ class Handler(BaseHTTPRequestHandler):
                         rel = os.path.relpath(m.pdf_path, src).replace("\\", "/")
                 except Exception:
                     rel = ""
+                low = rel.lower()
                 idx.append({
                     "name": m.name, "klass": m.klass, "phone": m.phone,
                     "dept": dept, "minister": bool(m.is_minister),
-                    "sid": getattr(m, "sid", ""), "pdf": rel,
+                    "sid": getattr(m, "sid", ""),
+                    "pdf": rel if low.endswith(".pdf") else "",
+                    "sheet": rel if low.endswith((".xlsx", ".xlsm")) else "",
                     "shifts": assign.get(m.name, []),
                 })
         INDEX_CACHE[jid] = idx
