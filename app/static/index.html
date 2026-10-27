@@ -62,7 +62,8 @@
   .slotgrid td{cursor:pointer;user-select:none;background:#fff}
   .slotgrid td:hover{background:#f1f5f9}
   .slotgrid td.on{background:#dcfce7;box-shadow:inset 0 0 0 2px #16a34a;font-weight:600;color:#166534}
-  .slotgrid td.on::after{content:"部长";font-size:11.5px}
+  #slotGrid td.on::after{content:"部长";font-size:11.5px}
+#freeGrid td.on::after{content:"✓";font-size:13px}
   details.wk{margin-top:12px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:#fcfcfd}
   details.wk summary{cursor:pointer;font-size:13.5px;color:var(--accent-2);font-weight:600}
   .wkline{margin-top:12px}
@@ -72,6 +73,7 @@
   table.wkt td.d{width:70px;font-weight:600;white-space:nowrap}
   table.wkt td.c{width:46px;color:var(--muted)}
   table.wkt td.n{line-height:1.7}
+  b.min{color:#d93025;font-weight:600}
   .namelink{color:#b45309;text-decoration:underline dotted}
   .namelink:hover{color:#92400e}
   .ghost-link{display:inline-block;font-size:13px;color:var(--accent-2);text-decoration:none;
@@ -81,7 +83,7 @@
   .problems li{color:var(--bad);font-size:13px;line-height:1.6;margin:2px 0}
   .okbar{background:#ecfdf5;border-color:#a7f3d0;color:var(--ok)}
   .warns{margin-top:12px}
-  .warns div{font-size:13px;color:var(--warn);background:#fffbeb;border:1px solid #fde68a;
+  .warns div:not(.warnmore){font-size:13px;color:var(--warn);background:#fffbeb;border:1px solid #fde68a;
              border-radius:9px;padding:8px 12px;margin-top:6px;line-height:1.5}
   .hide{display:none !important}
   .spinner{width:16px;height:16px;border:2px solid #fff;border-right-color:transparent;border-radius:50%;
@@ -134,6 +136,18 @@
       <button id="go">开始生成</button>
     </div>
     <div id="genStatus" class="muted" style="margin-top:10px"></div>
+  </section>
+
+  <section class="card hide" id="freeCard">
+    <h2>🔍 查空（点格子看谁有空）</h2>
+    <div class="muted" style="margin-bottom:10px">点表格里的格子，下面列出这个时段有空的人（按部门顺序）。</div>
+    <div class="row" style="margin-bottom:10px">
+      <label class="muted">统计第 <select id="fw1"></select> 周</label>
+      <label class="muted">到第 <select id="fw2"></select> 周</label>
+      <span id="fwsum" class="muted"></span>
+    </div>
+    <div id="freeGrid"></div>
+    <div id="freeBody" style="margin-top:12px"></div>
   </section>
 
   <section class="card hide" id="slotCard">
@@ -311,18 +325,78 @@ function updateSlotInfo(){
 }
 buildSlotGrid();
 
+/* ---------- 查空表 ---------- */
+function buildFreeGrid(){
+  const box = $('#freeGrid');
+  if (!box) return;
+  let html = '<div class="slotgrid"><table><thead><tr><th class="tm">时间</th>'
+    + SLOT_DAYS.map(d => '<th>' + d + '</th>').join('') + '</tr></thead><tbody>';
+  SLOT_TIMES.forEach((t, blk) => {
+    html += '<tr><th class="tm">' + t + '</th>';
+    for (let day = 1; day <= 5; day++){
+      html += '<td data-fk="' + day + ',' + blk + '"></td>';
+    }
+    html += '</tr>';
+  });
+  html += '</tbody></table></div>';
+  box.innerHTML = html;
+  box.querySelectorAll('td').forEach(td => {
+    td.onclick = () => {
+      box.querySelectorAll('td').forEach(x => x.classList.remove('on'));
+      td.classList.add('on');
+      loadFree(td.dataset.fk);
+    };
+  });
+}
+async function loadFree(slot){
+  if (!LAST_JOB){ $('#freeBody').innerHTML = '<div class="muted">先上传并检查一次文件。</div>'; return; }
+  const a = +$('#fw1').value, b = +$('#fw2').value;
+  if (a > b){ $('#freeBody').innerHTML = '<div class="muted">起始周不能大于结束周</div>'; return; }
+  $('#freeBody').innerHTML = '<div class="muted">查询中…</div>';
+  try{
+    const res = await fetch('/api/download?job=' + LAST_JOB + '&kind=free&slot=' + encodeURIComponent(slot)
+      + '&w1=' + a + '&w2=' + b);
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.error || '查询失败');
+    const [day, blk] = slot.split(',').map(Number);
+    let html = '<div class="muted" style="margin-bottom:8px">' + DAY_NAMES[day - 1] + ' ' + SLOT_NAMES[blk]
+             + '（第 ' + a + '–' + b + ' 周）共有 <b>' + d.count + '</b> 人有空</div>';
+    html += '<div class="files"><ul>';
+    for (const r of d.rows){
+      html += '<li><span class="nm">' + r.name + (r.minister ? '（部长）' : '') + ' · ' + r.dept
+            + ' · ' + (r.klass || '') + ' · ' + (r.phone || '')
+            + '</span><span class="sz">' + r.weeks + '</span></li>';
+    }
+    html += '</ul></div>';
+    $('#freeBody').innerHTML = html;
+  }catch(e){
+    $('#freeBody').innerHTML = '<div class="muted">' + e.message + '</div>';
+  }
+}
+buildFreeGrid();
+
 /* ---------- 周次 ---------- */
 function fillWeeks(){
   const opts = [];
   for (let i = 1; i <= 30; i++) opts.push('<option value="' + i + '">' + i + '</option>');
-  $('#w1').innerHTML = opts.join(''); $('#w2').innerHTML = opts.join('');
+  ['#w1', '#w2', '#fw1', '#fw2'].forEach(sel => { $(sel).innerHTML = opts.join(''); });
   $('#w1').value = 1; $('#w2').value = 18;
+  $('#fw1').value = 1; $('#fw2').value = 18;
+  $('#fw1').onchange = () => { sumFreeWeeks(); };
+  $('#fw2').onchange = () => { sumFreeWeeks(); };
+}
+function sumFreeWeeks(){
+  const a = +$('#fw1').value, b = +$('#fw2').value;
+  $('#fwsum').textContent = a > b ? '起始周不能大于结束周' : ('共 ' + (b - a + 1) + ' 周');
+  const sel = document.querySelector('#freeGrid td.on');
+  if (sel) loadFree(sel.dataset.fk);
 }
 function sumWeeks(){
   const a = +$('#w1').value, b = +$('#w2').value;
   $('#wsum').textContent = a > b ? '起始周不能大于结束周' : ('共 ' + (b - a + 1) + ' 周');
 }
 fillWeeks(); $('#w1').onchange = sumWeeks; $('#w2').onchange = sumWeeks;
+sumFreeWeeks();
 refreshLib();
 
 /* ---------- 生成 ---------- */
@@ -363,6 +437,8 @@ $('#go').onclick = async () => {
     const cr = await fetch('/api/check?job=' + jobId, {method:'POST'});
     const report = await cr.json();
     if (!cr.ok) throw new Error(report.error || '检查失败');
+    LAST_JOB = jobId;
+    $('#freeCard').classList.remove('hide');
     if (report.problems && report.problems.length){
       renderProblems(report);
       return;
@@ -377,6 +453,8 @@ $('#go').onclick = async () => {
     const g = await gr.json();
     if (!gr.ok) throw new Error(g.error || '生成失败');
     LAST_JOB = jobId;
+    $('#freeCard').classList.remove('hide');
+    $('#freeCard').classList.remove('hide');
     $('#slotCard').classList.remove('hide');
     renderResult(g);
     const sel = $('#deptSel');
@@ -526,11 +604,7 @@ function renderResult(d){
     });
     html += '<div class="muted" style="margin-bottom:12px">已上传的值班表里各部门人数：' + parts.join('；') + '</div>';
   }
-  if (d.week_dept){
-    const parts = Object.keys(d.week_dept).sort((a, b) => a - b)
-      .map(w => '第' + w + '周 ' + d.week_dept[w]);
-    html += '<div class="muted" style="margin-bottom:12px">一周一个部门：' + parts.join('、') + '</div>';
-  }
+
   if (d.skipped_weeks && d.skipped_weeks.length){
     html += '<div class="muted" style="margin-bottom:12px">已跳过已有值班表的周：'
           + d.skipped_weeks.map(w => '第' + w + '周').join('、')
@@ -555,11 +629,17 @@ function renderResult(d){
     for (const w of weeks){
       const rows = d.week_detail[w];
       const brief = rows.map(r => r.dept + r.count).join('、');
-      html += '<div class="wkline"><div class="wkh">第' + w + '周 <span class="muted">' + brief + '</span></div>'
+      const isHist = (d.history_weeks || []).indexOf(+w) >= 0;
+      html += '<div class="wkline"><div class="wkh">第' + w + '周'
+        + (isHist ? ' <span class="muted">（已有值班表）</span>' : '')
+        + ' <span class="muted">' + brief + '</span></div>'
         + '<table class="wkt"><tbody>';
       for (const r of rows){
+        const mins = d.ministers || [];
+        const nm = r.names.map(x => mins.indexOf(x) >= 0
+          ? '<b class="min">' + x + '</b>' : x).join('、');
         html += '<tr><td class="d">' + r.dept + '</td><td class="c">' + r.count + '</td>'
-              + '<td class="n">' + r.names.join('、') + '</td></tr>';
+              + '<td class="n">' + nm + '</td></tr>';
       }
       html += '</tbody></table></div>';
     }
