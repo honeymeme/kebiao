@@ -6,7 +6,7 @@ import copy
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from core import (collect_members, parse_pdf, free_weeks, fmt_weeks, Member,
-                  BLOCKS, BLOCK_TIMES, WEEKDAY_NAMES)
+                  BLOCKS, BLOCK_TIMES, WEEKDAY_NAMES, BLOCK_SHORT)
 
 import openpyxl
 from openpyxl.styles import Font, Alignment, Color
@@ -241,10 +241,11 @@ def week_dept_map(all_members, w1, w2, skip_weeks=None, offset=0):
 
 
 def plan_duty(all_members, w1, w2, per_cell=2, seed_counts=None, skip_weeks=None, boost=None,
-               minister_only=None, start_offset=0):
+               minister_only=None, start_offset=0, seed_weeks=None):
     """按周排班（一周一个部门）。minister_only = {(day, blk)} 这些格只排部长。"""
     boost = boost or {}
-    minister_only = set(minister_only or ())
+    # 部长专用格不再特殊处理：按正常规则排，谁有空谁上
+    minister_only = set()
 
     def _b(p):
         return int(boost.get("%s|%s" % (p.dept, p.name), 0))
@@ -257,6 +258,16 @@ def plan_duty(all_members, w1, w2, per_cell=2, seed_counts=None, skip_weeks=None
     skip_weeks = set(skip_weeks or ())
     count = {id(p): int(seed_counts.get(p.name, 0)) for p in people}
     last_week = {id(p): -99 for p in people}
+    served = {id(p): set((seed_weeks or {}).get(p.name, [])) for p in people}
+
+    def streak_before(p, w):
+        """这个人到上一周为止，已经连续排了几周"""
+        s = served[id(p)]
+        n, k = 0, w - 1
+        while k in s:
+            n += 1
+            k -= 1
+        return n
     n_normal = max(1, len([p for p in people if not p.is_minister]))
     todo_weeks = [w for w in range(w1, w2 + 1) if w not in skip_weeks]
     total_slots = len(todo_weeks) * 20 * per_cell
@@ -264,18 +275,36 @@ def plan_duty(all_members, w1, w2, per_cell=2, seed_counts=None, skip_weeks=None
     plan = {}
     notes = {}
 
-    # 一周一个主部门：按部门顺序把周次分下去，轮完再从头开始
-    week_dept = week_dept_map(all_members, w1, w2, skip_weeks, start_offset)
-    # 主部门凑不齐时，可以叫下一个部门的人来补（一周最多两个部门）
-    _seq = dept_sequence(all_members)
-    week_dept_extra = {}
-    if len(_seq) > 1:
-        for _i, _w in enumerate(todo_weeks):
-            extras = []
-            for _k in (1, 2):
-                if len(_seq) > _k:
-                    extras.append(all_members.get(_seq[(_i + _k) % len(_seq)], []))
-            week_dept_extra[_w] = extras
+    # 按部门顺序排队，一个人一个人往外派：
+    # 先办公室，办公室的人排完了还有空格就轮到科协，再青协（一周最多三个部门）；
+    # 这一周没排上的人，下周接着排在前面。
+    seq = dept_sequence(all_members)
+    n_seq = len(seq)
+    week_dept_out = {}
+
+    queue = []
+    for d in seq:
+        for m in all_members.get(d, []):
+            queue.append(m)
+    qpos = 0
+    if queue and start_offset:
+        # 有历史值班表时，把指针挪到"最后一个部门的下一个部门"
+        # 从"排了一半的部门"开始：优先挑已经有人值过、但还没排完的那个部门
+        served_names = set((seed_weeks or {}).keys())
+        half, zero = [], []
+        if served_names:
+            for _i, _d in enumerate(seq):
+                _ms = [m for m in all_members.get(_d, []) if not m.is_minister]
+                if not _ms:
+                    continue
+                _done = sum(1 for m in _ms if m.name in served_names)
+                if 0 < _done < len(_ms):
+                    half.append(_i)
+                elif _done == 0:
+                    zero.append(_i)
+        start_i = half[0] if half else (zero[0] if zero else 0)
+        anchor = seq[start_i % n_seq]
+        qpos = next((i for i, m in enumerate(queue) if m.dept == anchor), 0)
 
     for w in range(w1, w2 + 1):
         week_plan = {}
@@ -283,61 +312,208 @@ def plan_duty(all_members, w1, w2, per_cell=2, seed_counts=None, skip_weeks=None
         if w in skip_weeks:
             plan[w] = week_plan
             continue
-        main_dept = week_dept.get(w, "")
-        members = all_members.get(main_dept, [])
-        if not members:
+        if not queue:
             plan[w] = week_plan
-            notes[w].append("这一周没有可用的部门成员")
+            notes[w].append("没有可用的部门成员")
             continue
-        used_today = {}
+
         cells = [(blk, day) for blk in range(4) for day in range(1, 6)]
-        for blk, day in cells:
+        state = {c: [] for c in cells}
+
+        def day_used(p, day):
+            return any(p in lst for (b, d), lst in state.items() if d == day)
+
+        def can_put(p, cell):
+            lst = state[cell]
+            blk, day = cell
             only_min = (day, blk) in minister_only
+            if w in (p.busy.get((day, blk)) or set()):
+                return False
+            if day_used(p, day):
+                return False
+            if not lst:
+                return True
+            if lst[0].is_minister:
+                return False          # 部长独占一格
+            if p.is_minister:
+                return False          # 干事已占位，不再塞部长
+            if len(lst) >= per_cell:
+                return False
+            if only_min:
+                return False
+            return True
 
-            def cands_of(plist, dept_rank):
-                out = []
-                for p in plist:
-                    if w in (p.busy.get((day, blk)) or set()):
-                        continue
-                    if only_min and not p.is_minister:
-                        continue
-                    if id(p) in used_today:
-                        continue
-                    out.append((dept_rank, p))
-                return out
+        # 这一周最多只动三个部门：从队首所在部门开始，往后再取两个
+        head_dept = queue[qpos].dept
+        i0 = seq.index(head_dept) if head_dept in seq else 0
+        window = {seq[(i0 + k) % n_seq] for k in range(min(3, n_seq))}
 
-            need = 1 if only_min else per_cell
-            pool = cands_of(members, 0)
-            # 本部门凑不齐时，依次叫后面两个部门的人来补（一周最多三个部门）
-            for _idx, _extra in enumerate(week_dept_extra.get(w, [])):
-                if len(pool) >= need:
+        # 本周候选：从队首开始、连续属于这三个部门的人
+        cands = []
+        scanned = 0
+        while scanned < len(queue):
+            p = queue[(qpos + scanned) % len(queue)]
+            if p.dept not in window:
+                break
+            cands.append(p)
+            scanned += 1
+
+        def cells_full():
+            return all(len(state[c]) >= (1 if state[c] and state[c][0].is_minister else per_cell)
+                       for c in cells)
+
+        def place(p):
+            for cell in cells:
+                if can_put(p, cell):
+                    state[cell].append(p)
+                    count[id(p)] += 1
+                    last_week[id(p)] = w
+                    served[id(p)].add(w)
+                    return True
+            return False
+
+        # 先排干事（干事优先），同一部门里按"已排次数少"的先上，让次数尽量平均
+        cadres = [x for x in cands if not x.is_minister]
+        cadres.sort(key=lambda x: (count[id(x)], queue.index(x) if x in queue else 0))
+        for p in cadres:
+            if cells_full():
+                break
+            if streak_before(p, w) >= 2:
+                continue              # 干事不连排三周
+            place(p)
+        for p in [x for x in cands if x.is_minister]:
+            if cells_full():
+                break
+            place(p)
+
+        # 还缺人的格子：往下多找几个部门，尽量把一格凑够两个人
+        used = []
+        for cell in cells:
+            lst = state[cell]
+            if len(lst) != 1 or lst[0].is_minister:
+                continue
+            blk, day = cell
+            if (day, blk) in minister_only:
+                continue
+            # 只能在本周已有的部门里找人补（一周最多三个部门）
+            for k in range(0, n_seq):
+                d2 = seq[(i0 + k) % n_seq]
+                if d2 not in used:
+                    continue
+                got = None
+                for p2 in all_members.get(d2, []):
+                    if w in (p2.busy.get((day, blk)) or set()):
+                        continue
+                    if p2.is_minister:
+                        continue
+                    if day_used(p2, day):
+                        continue
+                    got = p2
                     break
-                pool += cands_of(_extra, _idx + 1)
+                if got is not None:
+                    lst.append(got)
+                    count[id(got)] += 1
+                    last_week[id(got)] = w
+                    served[id(got)].add(w)
+                    if got.dept not in used:
+                        used.append(got.dept)
+                    break
 
-            def key(item):
-                rank, p = item
-                c = max(0, count[id(p)] - _b(p))
-                tier = 2 if p.is_minister else 0
-                return (rank, tier, c, w - last_week[id(p)], p.name)
+        for cell in cells:
+            week_plan[cell] = state[cell]
+            if not state[cell]:
+                notes[w].append("%s %s 没有可用的人"
+                                % (WEEKDAY_NAMES[cell[1] - 1], BLOCK_TIMES[cell[0]]))
+            elif len(state[cell]) == 1 and not state[cell][0].is_minister:
+                notes[w].append("SINGLE|%d|%d" % (cell[1], cell[0]))
+                week_plan[cell] = []
 
-            pool.sort(key=key)
-            cands = [p for _r, p in pool]
-            # 部长专用格只安排 1 个人
-            chosen = cands[:1] if only_min else cands[:per_cell]
-            # 只要这格有部长，就只留这位部长（干事不再占位）
-            if any(p.is_minister for p in chosen):
-                chosen = [p for p in chosen if p.is_minister][:1]
-            week_plan[(blk, day)] = chosen
-            for p in chosen:
-                count[id(p)] += 1
-                last_week[id(p)] = w
-                used_today[id(p)] = used_today.get(id(p), 0) + 1
-            if len(chosen) < per_cell:
-                notes[w].append("%s %s %s只有 %d 人可排（%s）"
-                                % (WEEKDAY_NAMES[day - 1], BLOCK_TIMES[blk],
-                                   "【部长专用】" if only_min else "",
-                                   len(chosen), week_dept.get(w, "")))
+        for cell in cells:
+            for p in week_plan[cell]:
+                if p.dept not in used:
+                    used.append(p.dept)
+        used.sort(key=lambda d: seq.index(d) if d in seq else 99)
+        week_dept_out[w] = used
+        qpos = (qpos + max(1, scanned)) % len(queue)
         plan[w] = week_plan
+
+    # ---- 兜底：保证每个干事至少排到一次 ----
+    def cnt_now():
+        c = {id(p2): int(seed_counts.get(p2.name, 0)) for p2 in people}
+        for _w in range(w1, w2 + 1):
+            for _lst in plan[_w].values():
+                for q in _lst:
+                    c[id(q)] += 1
+        return c
+
+    def only_min_cell(day, blk):
+        return (day, blk) in minister_only
+
+    def try_add(p, any_dept=False, only_under3=False, victim_min=2):
+        weeks_order = list(range(w1, w2 + 1))
+        if any_dept:
+            # 优先挑部门数还没到 3 的周，尽量不新增部门
+            weeks_order.sort(key=lambda x: (len(week_dept_out.get(x, [])) >= 3, x))
+        for _w in weeks_order:
+            if _w in skip_weeks:
+                continue
+            if only_under3 and len(week_dept_out.get(_w, [])) >= 3:
+                continue
+            if not any_dept and p.dept not in week_dept_out.get(_w, []):
+                continue
+            for cell, lst in plan[_w].items():
+                blk, day = cell
+                if _w in (p.busy.get((day, blk)) or set()):
+                    continue
+                if any(p in l for c2, l in plan[_w].items() if c2[1] == day):
+                    continue
+                if only_min_cell(day, blk):
+                    continue
+                if not lst:
+                    lst.append(p)
+                    if p.dept not in week_dept_out.setdefault(_w, []):
+                        week_dept_out[_w].append(p.dept)
+                    return True
+                if len(lst) == 1 and not lst[0].is_minister:
+                    lst.append(p)
+                    if p.dept not in week_dept_out.setdefault(_w, []):
+                        week_dept_out[_w].append(p.dept)
+                    return True
+                if len(lst) == 2 and not any(q.is_minister for q in lst):
+                    cur = cnt_now()
+                    victim = max(lst, key=lambda q: cur.get(id(q), 0))
+                    if cur.get(id(victim), 0) >= victim_min:
+                        lst[lst.index(victim)] = p
+                        return True
+        return False
+
+    for _round in range(20):
+        cur = cnt_now()
+        left = [p for p in people if not p.is_minister and cur.get(id(p), 0) == 0]
+        if not left:
+            break
+        moved = False
+        for p in left:
+            if (try_add(p)
+                    or try_add(p, any_dept=True, only_under3=True)):
+                moved = True
+        if not moved:
+            break
+
+    # ---- 再补一轮：让干事尽量每人至少 2 次 ----
+
+    for _round in range(20):
+        cur = cnt_now()
+        left = [p for p in people if not p.is_minister and cur.get(id(p), 0) < 2]
+        if not left:
+            break
+        moved = False
+        for p in left:
+            if (try_add(p, victim_min=2)
+                    or try_add(p, any_dept=True, only_under3=True, victim_min=2)):
+                moved = True
+        if not moved:
+            break
 
     counts_map = {id(p): 0 for p in people}
     for w in range(w1, w2 + 1):
@@ -357,7 +533,7 @@ def plan_duty(all_members, w1, w2, per_cell=2, seed_counts=None, skip_weeks=None
             "zero_ministers": [p.name for p in zero_people if p.is_minister],
             "zero_members": [p.name for p in zero_people if not p.is_minister],
         }
-    return plan, notes, stats
+    return plan, notes, stats, week_dept_out
 
 
 def build_duty(template, week, week_plan, notes, out_path):
@@ -457,9 +633,12 @@ def build_detail(data, w1, w2, out_path, counts=None, assign=None):
 
 
 # ---------- 解析结果磁盘缓存（免费服务器内存小，进程重启后不用重新解析） ----------
+PARSER_VERSION = 3     # 解析逻辑变了就 +1，旧缓存自动作废
+
+
 def save_parsed(data, src_dir, path):
     import json
-    out = {}
+    out = {"v": PARSER_VERSION, "depts": {}}
     for dept, members in data.items():
         arr = []
         for m in members:
@@ -477,7 +656,7 @@ def save_parsed(data, src_dir, path):
                 "busy": {"%d|%d" % (d, b): sorted(ws)
                          for (d, b), ws in (m.busy or {}).items()},
             })
-        out[dept] = arr
+        out["depts"][dept] = arr
     with open(path, "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False)
 
@@ -490,8 +669,10 @@ def load_parsed(path, src_dir):
         raw = json.load(open(path, encoding="utf-8"))
     except Exception:
         return None
+    if raw.get("v") != PARSER_VERSION:
+        return None
     data = {}
-    for dept, arr in raw.items():
+    for dept, arr in raw.get("depts", {}).items():
         members = []
         for a in arr:
             pdf = os.path.join(src_dir, a["pdf"]) if a.get("pdf") else ""

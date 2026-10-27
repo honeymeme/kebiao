@@ -33,9 +33,13 @@ def _is_special(color):
     return True
 
 
+_DASHES = str.maketrans({"\u2014": "-", "\u2013": "-", "\u2015": "-",
+                         "\uff0d": "-", "\u301c": "-", "\uff5e": "-", "\u007e": "-"})
+
+
 def _weeks_from_text(s):
     weeks = set()
-    for part in re.split(r"[，,、]", s or ""):
+    for part in re.split(r"[，,、]", (s or "").translate(_DASHES)):
         part = part.strip()
         m = re.fullmatch(r"(\d+)\s*-\s*(\d+)", part)
         if m:
@@ -142,8 +146,9 @@ def parse_empty_sheet(path):
     for name in order:
         klass, phone = info.get(name, ("", ""))
         m = Member(name, klass, phone, dept, name in minister, path)
-        # 表里列的是"有空"的周次，这里反推成"被占用"的周次
-        busy = {}
+        # 表里列的是"有空"的周次，这里反推成"被占用"的周次；
+        # 没被列出来的格子 = 那个时段没空（全周都占用）
+        busy = {(d, b): set(range(1, 31)) for d in range(1, 6) for b in range(4)}
         for (day, blk), weeks in free[name].items():
             busy[(day, blk)] = set(range(1, 31)) - weeks
         m.busy = busy

@@ -84,6 +84,37 @@ class Handler(BaseHTTPRequestHandler):
                 hits.sort(key=lambda x: (x["name"] != kw, x["name"]))
                 self._json({"matches": hits[:40], "depts": sorted({x["dept"] for x in idx})})
                 return
+            if kind == "free":
+                slot = (q.get("slot") or [""])[0]
+                try:
+                    day, blk = [int(x) for x in slot.split(",")]
+                except (ValueError, AttributeError):
+                    self._json({"error": "参数错误"}, 400)
+                    return
+                w1 = int((q.get("w1") or ["8"])[0])
+                w2 = int((q.get("w2") or ["18"])[0])
+                data = DATA_CACHE.get(jid)
+                if data is None:
+                    data = pipeline.load_parsed(os.path.join(job_dir(jid), "parsed.json"),
+                                                os.path.join(job_dir(jid), "src"))
+                if data is None:
+                    self._json({"error": "还没有解析数据，请先生成一次"}, 400)
+                    return
+                order = {d: i for i, d in enumerate(pipeline.DEPT_ORDER)}
+                rows = []
+                for dept, ms in data.items():
+                    for m in ms:
+                        busy = m.busy.get((day, blk)) or set()
+                        free = [w for w in range(w1, w2 + 1) if w not in busy]
+                        if free:
+                            rows.append({
+                                "name": m.name, "dept": dept, "klass": m.klass,
+                                "phone": m.phone, "minister": bool(m.is_minister),
+                                "weeks": pipeline.fmt_weeks(free),
+                            })
+                rows.sort(key=lambda r: (order.get(r["dept"], 99), r["name"]))
+                self._json({"rows": rows, "count": len(rows)})
+                return
             if kind == "pdf":
                 name = (q.get("name") or [""])[0]
                 idx = INDEX_CACHE.get(jid, [])
@@ -273,6 +304,7 @@ class Handler(BaseHTTPRequestHandler):
             os.makedirs(p, exist_ok=True)
 
         warnings = []
+        singles = []
         if mode == "pdf":
             for dept, members in data.items():
                 if not members:
@@ -317,15 +349,24 @@ class Handler(BaseHTTPRequestHandler):
                     votes[dp] = votes.get(dp, 0) + 1
             if votes:
                 ordered = sorted(votes.items(), key=lambda kv: -kv[1])
-                hist_dept[_w] = ordered[0][0]
+                # 这一周"用到的最后一个部门"（按部门顺序最靠后的那个），
+                # 下一周要从它的下一个部门接着排
+                _seq0 = pipeline.dept_sequence(data)
+                _idx = {d: i for i, d in enumerate(_seq0)}
+                last_dept = max(votes.keys(), key=lambda d: _idx.get(d, -1))
+                hist_dept[_w] = last_dept
                 hist_votes[_w] = [[k, v] for k, v in ordered[:3]]
         seq = pipeline.dept_sequence(data)
         offset = pipeline.infer_offset(seq, w1, hist_dept)
 
-        plan, notes, duty_stats = pipeline.plan_duty(
+        seed_weeks = {}
+        for _w2, _slots in (hist_detail or {}).items():
+            for _lst in _slots.values():
+                for n in _lst:
+                    seed_weeks.setdefault(n, []).append(_w2)
+        plan, notes, duty_stats, week_map = pipeline.plan_duty(
             data, w1, w2, seed_counts=hist_counts, skip_weeks=hist_weeks, boost=boost,
-            minister_only=minister_only, start_offset=offset)
-        week_map = pipeline.week_dept_map(data, w1, w2, hist_weeks, offset)
+            minister_only=minister_only, start_offset=offset, seed_weeks=seed_weeks)
         duty_files = []
         for w in range(w1, w2 + 1):
             if w in hist_weeks:
@@ -336,6 +377,10 @@ class Handler(BaseHTTPRequestHandler):
                                 os.path.join(out_duty, fn))
             duty_files.append(fn)
             for msg in notes.get(w, []):
+                if msg.startswith("SINGLE|"):
+                    _d, _b = msg.split("|")[1:]
+                    singles.append((w, int(_d), int(_b)))
+                    continue
                 warnings.append("第%s周：%s" % (pipeline.cn_num(w), msg))
 
         counts = {}
@@ -343,8 +388,29 @@ class Handler(BaseHTTPRequestHandler):
             for lst in wk.values():
                 for p in lst:
                     counts[p.name] = counts.get(p.name, 0) + 1
+        if singles:
+            def _short(w, d, b):
+                return "第%d周%s·%s" % (w, pipeline.WEEKDAY_NAMES[d - 1], pipeline.BLOCK_SHORT[b])
+            shown = [_short(w, d, b) for (w, d, b) in singles[:12]]
+            more = "" if len(singles) <= 12 else " 等 %d 个" % len(singles)
+            warnings.append("%d 个格子只剩 1 名干事、已留空：%s%s"
+                            % (len(singles), "、".join(shown), more))
+
         # 每周的部门/人次/人员明细（给结果页做汇总）
         week_detail = {}
+        # 先放上传的既有值班表（第8、9周那些）
+        for _w, _slots in (hist_detail or {}).items():
+            by = {}
+            for _lst in _slots.values():
+                for n in _lst:
+                    dp = name2dept.get(n)
+                    if dp:
+                        by.setdefault(dp, []).append(n)
+            if by:
+                week_detail[str(_w)] = [
+                    {"dept": k, "count": len(v), "names": v}
+                    for k, v in sorted(by.items(), key=lambda kv: -len(kv[1]))
+                ]
         for w in range(w1, w2 + 1):
             if w in hist_weeks or not plan.get(w):
                 continue
@@ -413,8 +479,10 @@ class Handler(BaseHTTPRequestHandler):
             "duty": "/api/download?job=%s&kind=duty" % jid,
             "detail": ("/api/download?job=%s&kind=detail" % jid) if want_detail else None,
             "skipped_weeks": skipped,
-            "week_dept": {str(k): v for k, v in week_map.items()},
+            "week_dept": {str(k): (v if isinstance(v, list) else [v]) for k, v in week_map.items()},
             "week_detail": week_detail,
+            "ministers": [m.name for _ms in data.values() for m in _ms if m.is_minister],
+            "history_weeks": sorted(hist_weeks),
             "history_dept": {str(k): v for k, v in hist_dept.items()},
             "history_votes": {str(k): v for k, v in hist_votes.items()},
             "warnings": warnings[:50],

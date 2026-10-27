@@ -15,6 +15,7 @@ from openpyxl.styles import Font, Color, Alignment
 
 BLOCKS = [(1, 2), (3, 4), (5, 6), (7, 8)]
 BLOCK_TIMES = ["8：30-9：50", "10：00-11：50", "1：40-3：20", "3：40-4：30"]
+BLOCK_SHORT = ["8:30", "10:00", "1:40", "3:40"]
 WEEKDAY_NAMES = ["周一", "周二", "周三", "周四", "周五"]
 HEADER_NAMES = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
 
