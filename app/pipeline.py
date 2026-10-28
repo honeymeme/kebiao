@@ -555,8 +555,9 @@ def build_duty(template, week, week_plan, notes, out_path):
     return out_path
 
 
-def build_detail(data, w1, w2, out_path, counts=None, assign=None):
-    """生成"解析明细.xlsx"：每人每格的有课/空闲周次 + 实际排班时间。"""
+def build_detail(data, w1, w2, out_path, counts=None, assign=None, show_busy=True):
+    """生成"解析明细.xlsx"：每人每格的空闲/有课周次 + 实际排班时间。
+    show_busy=False 时不写"有课周次"（数据来源是空课表，只能知道哪些周有空）。"""
     assign = assign or {}
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -565,7 +566,8 @@ def build_detail(data, w1, w2, out_path, counts=None, assign=None):
     ws.append(head)
 
     ws2 = wb.create_sheet("时段明细")
-    ws2.append(["部门", "姓名", "星期", "时段", "有课周次（1-30）", "范围内空闲周次"])
+    ws2.append(["部门", "姓名", "星期", "时段"] +
+               (["有课周次（1-30）"] if show_busy else []) + ["范围内空闲周次"])
 
     for dept, members in data.items():
         for m in members:
@@ -584,8 +586,11 @@ def build_detail(data, w1, w2, out_path, counts=None, assign=None):
                 for blk in range(4):
                     busy = sorted(m.busy.get((day, blk)) or [])
                     free = free_weeks(m.busy.get((day, blk)), w1, w2)
-                    ws2.append([dept, m.name, WEEKDAY_NAMES[day - 1], BLOCK_TIMES[blk],
-                                fmt_weeks(busy) or "（无课）", fmt_weeks(free) or "（全满）"])
+                    row = [dept, m.name, WEEKDAY_NAMES[day - 1], BLOCK_TIMES[blk]]
+                    if show_busy:
+                        row.append(fmt_weeks(busy) or "（无课）")
+                    row.append(fmt_weeks(free) or "（全满）")
+                    ws2.append(row)
 
     center = openpyxl.styles.Alignment(horizontal="center", vertical="center")
     left_wrap = openpyxl.styles.Alignment(horizontal="left", vertical="top", wrap_text=True)

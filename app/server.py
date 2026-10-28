@@ -440,7 +440,10 @@ class Handler(BaseHTTPRequestHandler):
         want_detail = bool(body.get("detail"))
         detail_path = os.path.join(d, "解析明细.xlsx")
         if want_detail:
-            pipeline.build_detail(data, w1, w2, detail_path, counts, assign)
+            _has_pdf = any(str(m.pdf_path).lower().endswith(".pdf")
+                           for _ms in data.values() for m in _ms)
+            pipeline.build_detail(data, w1, w2, detail_path, counts, assign,
+                                  show_busy=_has_pdf)
         idx = []
         for dept, members in data.items():
             for m in members:
